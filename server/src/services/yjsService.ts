@@ -1,5 +1,4 @@
 import * as Y from 'yjs'
-import { v4 as uuid } from 'crypto'
 import type { BoardObject } from '../../../shared/types.js'
 
 /**

@@ -78,7 +78,7 @@ router.post('/command', requireAuth, aiRateLimit, async (req, res) => {
     })
   } catch (err) {
     if (err instanceof z.ZodError) {
-      res.status(400).json({ error: err.errors })
+      res.status(400).json({ error: err.issues })
       return
     }
     console.error('AI command failed:', err)

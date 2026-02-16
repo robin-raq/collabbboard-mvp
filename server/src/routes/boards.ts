@@ -34,7 +34,7 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(201).json(board)
   } catch (err) {
     if (err instanceof z.ZodError) {
-      res.status(400).json({ error: err.errors })
+      res.status(400).json({ error: err.issues })
       return
     }
     console.error('Failed to create board:', err)
@@ -45,7 +45,7 @@ router.post('/', requireAuth, async (req, res) => {
 // GET /api/boards/:id — get board metadata
 router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const board = await boardService.getBoard(req.params.id)
+    const board = await boardService.getBoard(req.params.id as string)
     if (!board) {
       res.status(404).json({ error: 'Board not found' })
       return
@@ -61,7 +61,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const auth = getAuth(req)
-    await boardService.deleteBoard(req.params.id, auth.userId!)
+    await boardService.deleteBoard(req.params.id as string, auth.userId!)
     res.status(204).send()
   } catch (err) {
     console.error('Failed to delete board:', err)
