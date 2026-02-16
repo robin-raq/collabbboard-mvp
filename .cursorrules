@@ -1,0 +1,26 @@
+# CollabBoard AI — Cursor Agent Rules
+
+## Stack
+Frontend: React 18, Vite, TypeScript, Tailwind CSS, Konva.js, react-konva, Yjs, Zustand
+Backend: Node.js 20, Express, TypeScript, y-websocket, Supabase JS SDK
+Testing: Vitest + React Testing Library (frontend), Vitest (backend)
+
+## Conventions
+- All new code must have a corresponding test in /tests or *.test.ts
+- Never use any or unknown in TypeScript — define proper interfaces
+- Board state is always read from and written to Yjs Y.Map — never local React state
+- AI agent mutations must go through agentService.ts — never direct Y.Doc access from routes
+- All Express routes must use the auth middleware — no unauthenticated endpoints except /health
+- Use ky for all HTTP requests in the frontend — never raw fetch
+
+## File naming
+- Components: PascalCase.tsx
+- Hooks: useCamelCase.ts
+- Services: camelCaseService.ts
+- Tests: same name as file under test + .test.ts/.test.tsx
+
+## Do not
+- Use class components
+- Use useEffect for data fetching (use SWR or direct Yjs observers)
+- Store board objects in React state or Zustand
+- Commit API keys or secrets
