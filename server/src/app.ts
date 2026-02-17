@@ -4,7 +4,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { Liveblocks } from '@liveblocks/node'
 import { getAuth } from '@clerk/express'
-import { clerkAuth } from './middleware/auth.js'
+import { clerkAuth, requireAuth } from './middleware/auth.js'
 import boardsRouter from './routes/boards.js'
 import aiRouter from './routes/ai.js'
 
@@ -36,9 +36,10 @@ app.get('/api/config', (_req, res) => {
 })
 
 // Liveblocks auth endpoint - called by frontend to get access token
-app.post('/api/liveblocks-auth', async (req, res) => {
+app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
   try {
-    const auth = getAuth(req)
+    // At this point, requireAuth has already verified the user exists
+    const auth = (req as any).auth
     console.log('Liveblocks auth attempt - userId:', auth?.userId)
 
     if (!auth?.userId) {
