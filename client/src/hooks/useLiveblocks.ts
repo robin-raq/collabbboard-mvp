@@ -34,7 +34,6 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
 
   const objectsStorage = useStorage((root) => {
     const objects = root.objects as Record<string, BoardObject> | undefined
-    console.log('Liveblocks storage objects:', objects)
     return objects || {}
   })
   const othersPresence = useOthers()
@@ -43,11 +42,7 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
   const createObjectMutation = useMutation(
     ({ storage }, params: Partial<BoardObject> & { type: BoardObject['type']; x: number; y: number }, creatorId: string) => {
       const objects = storage.get('objects') as unknown as Record<string, BoardObject>
-      console.log('createObjectMutation - objects before:', objects)
-      if (!objects) {
-        console.error('createObjectMutation - no objects storage found')
-        return
-      }
+      if (!objects) return
 
       const id = crypto.randomUUID()
       const objectCount = Object.keys(objects).length
@@ -69,9 +64,7 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
         createdAt: Date.now(),
       }
 
-      console.log('createObjectMutation - creating object:', obj)
       objects[id] = obj
-      console.log('createObjectMutation - objects after:', objects)
     },
     []
   )
