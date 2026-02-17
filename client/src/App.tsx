@@ -1,34 +1,47 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthGuard } from './components/auth/AuthGuard'
-import { BoardPageWrapper } from './pages/BoardPageWrapper'
-import { DashboardPage } from './pages/DashboardPage'
-import { LoginPage } from './pages/LoginPage'
+import { ClerkProvider, SignedIn, SignedOut, SignIn, useUser } from '@clerk/clerk-react'
+import Board from './Board'
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route
-          path="/"
-          element={
-            <AuthGuard>
-              <DashboardPage />
-            </AuthGuard>
-          }
-        />
-        <Route
-          path="/board/:boardId"
-          element={
-            <AuthGuard>
-              <BoardPageWrapper />
-            </AuthGuard>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
-  )
+const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+function AuthenticatedBoard() {
+  const { user } = useUser()
+  const name =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
+    user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ||
+    'User'
+
+  console.log('[AUTH] Signed in as:', name)
+  return <Board userName={name} />
 }
 
-export default App
+export default function App() {
+  if (!CLERK_KEY) {
+    return (
+      <div style={{ padding: 40, fontFamily: 'system-ui', color: '#d32f2f' }}>
+        <h1>Missing VITE_CLERK_PUBLISHABLE_KEY</h1>
+        <p>Add it to <code>client/.env.local</code></p>
+      </div>
+    )
+  }
+
+  return (
+    <ClerkProvider publishableKey={CLERK_KEY}>
+      <SignedOut>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            background: '#f8fafc',
+          }}
+        >
+          <SignIn routing="hash" />
+        </div>
+      </SignedOut>
+      <SignedIn>
+        <AuthenticatedBoard />
+      </SignedIn>
+    </ClerkProvider>
+  )
+}
