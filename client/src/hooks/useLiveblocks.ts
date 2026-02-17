@@ -52,7 +52,7 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
         y: params.y,
         width: params.width ?? (params.type === 'sticky' ? 200 : 100),
         height: params.height ?? (params.type === 'sticky' ? 200 : 100),
-        text: params.text,
+        text: params.text ?? '',
         fill: params.fill ?? (params.type === 'sticky' ? '#FBBF24' : '#3B82F6'),
         stroke: params.stroke ?? '#000000',
         strokeWidth: params.strokeWidth ?? 1,

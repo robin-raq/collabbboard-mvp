@@ -50,9 +50,11 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
 
   const handleEditChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditText(e.target.value)
+    console.log('Text changed:', e.target.value)
   }
 
   const saveEdit = () => {
+    console.log('Saving edit:', editText)
     onUpdate({ text: editText })
     setIsEditing(false)
   }
