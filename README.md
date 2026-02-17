@@ -1,73 +1,141 @@
-# React + TypeScript + Vite
+# CollabBoard AI — Full-Stack Collaborative Whiteboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A real-time collaborative whiteboard with AI agent manipulation, built with React + Vite, Express, Yjs (CRDTs), and Supabase.
 
-Currently, two official plugins are available:
+**Status**: MVP in development (Day 1 of 5-day sprint)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Quick Start
 
-## React Compiler
+### Prerequisites
+- Node.js 20+
+- npm 11+
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Installation
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Install all dependencies
+npm install --prefix client
+npm install --prefix server
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Run Locally
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+**Terminal 1 — Start the backend (HTTP API + WebSocket server):**
+```bash
+cd server
+npm run dev
 ```
+Expected output:
+```
+HTTP API server running on port 3001
+WebSocket server running on port 1234
+```
+
+**Terminal 2 — Start the frontend (Vite dev server):**
+```bash
+cd client
+npm run dev
+```
+Expected output:
+```
+VITE v7.3.1  ready in 803 ms
+  ➜  Local:   http://localhost:5174/
+```
+
+Then open **http://localhost:5174** in your browser.
+
+### Run Tests
+
+```bash
+# Client tests
+cd client && npm test
+
+# Server tests
+cd server && npm test
+
+# Watch mode
+cd client && npm run test:watch
+cd server && npm run test:watch
+```
+
+## Architecture
+
+### Tech Stack
+- **Frontend**: React 18 + Vite + TypeScript + Tailwind CSS + Konva.js
+- **Backend**: Express + Node.js + y-websocket
+- **Real-time Sync**: Yjs (CRDTs) — handles multi-user conflict resolution automatically
+- **Database**: Supabase PostgreSQL (optional — can run without it)
+- **Auth**: Clerk (optional — runs with mock auth for local dev)
+- **AI**: Anthropic Claude (optional — logs to console when not configured)
+
+### Project Structure
+```
+.
+├── client/                # React frontend (Vite + Tailwind)
+│   ├── src/
+│   │   ├── components/    # canvas, toolbar, chat, auth
+│   │   ├── hooks/         # useYjsBoard, useAwareness, useAgentChat
+│   │   ├── lib/           # yjs, api, boardHelpers
+│   │   ├── pages/         # BoardPage, Dashboard, Login
+│   │   └── stores/        # Zustand (uiStore)
+│   └── vitest.config.ts
+├── server/                # Express backend
+│   ├── src/
+│   │   ├── routes/        # /api/boards, /api/ai
+│   │   ├── services/      # boardService, agentService, yjsService
+│   │   ├── middleware/    # auth, rateLimit
+│   │   ├── ws/            # WebSocket server (y-websocket compatible)
+│   │   └── lib/           # supabase, yjsRoom registry
+│   └── vitest.config.ts
+├── shared/                # Shared TypeScript types
+└── .cursorrules           # Cursor AI agent rules
+```
+
+## Development Notes
+
+### Without Clerk (Local Dev)
+The server runs with **mock auth** — all requests are accepted as `dev-user`.
+
+To enable real Clerk auth:
+1. Create a Clerk account at https://clerk.com
+2. Set `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` in `/server/.env.local` and `/client/.env.local`
+3. Restart the servers
+
+### Without Supabase (Local Dev)
+The server logs a warning but runs fine. Database features are disabled.
+
+To enable Supabase:
+1. Create a project at https://supabase.com
+2. Run the schema SQL from `shared/types.ts` (section 6.1 of architecture doc)
+3. Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` in `/server/.env.local`
+4. Restart the server
+
+### Without AI (Local Dev)
+The AI endpoint logs warnings but returns a fallback response.
+
+To enable Anthropic Claude:
+1. Get an API key from https://console.anthropic.com
+2. Set `ANTHROPIC_API_KEY` in `/server/.env.local`
+3. Restart the server
+
+## Roadmap (5-Day Sprint)
+
+- [x] Day 1: Monorepo scaffold + auth + Yjs + canvas + WS
+- [ ] Day 2: Board objects (sticky, rect, circle, line, text) + presence
+- [ ] Day 3: Persistence + multi-select + undo/redo
+- [ ] Day 4: AI agent chat panel + tool calls
+- [ ] Day 5: E2E tests + polish + deploy to Railway + Vercel
+
+## Contributing
+
+All code follows TDD (Test-Driven Development):
+1. Write a failing test
+2. Use Cursor Ultra to implement the feature
+3. Ensure tests pass
+4. Commit with small, focused PRs
+
+See `.cursorrules` for code conventions.
+
+## License
+
+MIT
