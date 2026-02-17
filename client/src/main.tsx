@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ClerkProvider } from '@clerk/clerk-react'
 import { LiveblocksProvider } from '@liveblocks/react'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
 import App from './App.tsx'
 
@@ -50,11 +51,13 @@ async function initializeApp() {
     // Root provider stack - Clerk is now required
     console.log('[App Init] Creating root element...')
     const root = (
-      <ClerkProvider publishableKey={clerkPubKey}>
-        <LiveblocksProvider publicApiKey={liveblocksPublicKey}>
-          <App />
-        </LiveblocksProvider>
-      </ClerkProvider>
+      <ErrorBoundary>
+        <ClerkProvider publishableKey={clerkPubKey}>
+          <LiveblocksProvider publicApiKey={liveblocksPublicKey}>
+            <App />
+          </LiveblocksProvider>
+        </ClerkProvider>
+      </ErrorBoundary>
     )
 
     console.log('[App Init] Rendering React app...')
