@@ -39,21 +39,25 @@ app.get('/api/config', (_req, res) => {
 app.post('/api/liveblocks-auth', async (req, res) => {
   try {
     const auth = getAuth(req)
+    console.log('Liveblocks auth attempt - userId:', auth?.userId)
 
-    if (!auth.userId) {
-      return res.status(401).json({ error: 'Unauthorized' })
+    if (!auth?.userId) {
+      console.error('No userId in auth:', auth)
+      return res.status(401).json({ error: 'Unauthorized - no user ID' })
     }
 
     const secret = process.env.LIVEBLOCKS_SECRET_KEY
     if (!secret) {
       console.error('LIVEBLOCKS_SECRET_KEY not configured')
-      return res.status(500).json({ error: 'Server configuration error' })
+      return res.status(500).json({ error: 'Server configuration error - missing secret' })
     }
 
+    console.log('Creating Liveblocks client...')
     const client = new Liveblocks({ secret })
 
     // Generate a session token for the authenticated user
     // Use userId as display name since we don't have user object in this context
+    console.log('Preparing Liveblocks session for user:', auth.userId)
     const session = client.prepareSession(auth.userId, {
       userInfo: {
         name: auth.userId || 'Anonymous',
@@ -63,12 +67,17 @@ app.post('/api/liveblocks-auth', async (req, res) => {
     // Allow access to any room (room authorization happens at the room level)
     session.allow(`*`, session.FULL_ACCESS)
 
+    console.log('Authorizing session...')
     const { body } = await session.authorize()
 
+    console.log('Session authorized successfully')
     res.json(body)
   } catch (error) {
     console.error('Liveblocks auth error:', error)
-    res.status(500).json({ error: 'Failed to authenticate with Liveblocks' })
+    res.status(500).json({
+      error: 'Failed to authenticate with Liveblocks',
+      message: error instanceof Error ? error.message : String(error)
+    })
   }
 })
 
