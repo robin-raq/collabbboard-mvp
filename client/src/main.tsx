@@ -15,13 +15,12 @@ async function initializeApp() {
     }
     const config = await response.json()
 
-    // Get keys from API response or fall back to environment variables
+    // Get Clerk key from API response or fall back to environment variables
     const clerkPubKey = config.clerkPublishableKey || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-    const liveblocksApiKey = config.liveblocksPublicKey || import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
 
     // Log for debugging
     console.log('Clerk Key:', clerkPubKey ? '✓ Set' : '✗ Missing')
-    console.log('Liveblocks Key:', liveblocksApiKey ? '✓ Set' : '✗ Missing')
+    console.log('Liveblocks Auth:', 'Configured via authEndpoint')
     console.log('API URL:', config.apiUrl || '/api')
 
     // Clerk is now required for authentication
@@ -33,19 +32,10 @@ async function initializeApp() {
       )
     }
 
-    if (!liveblocksApiKey) {
-      console.error('Missing VITE_LIVEBLOCKS_PUBLIC_KEY')
-      throw new Error(
-        'Missing VITE_LIVEBLOCKS_PUBLIC_KEY environment variable. ' +
-        'Get this from https://liveblocks.io/dashboard'
-      )
-    }
-
     // Root provider stack - Clerk is now required
     const root = (
       <ClerkProvider publishableKey={clerkPubKey}>
         <LiveblocksProvider
-          publicApiKey={liveblocksApiKey}
           authEndpoint={async (room) => {
             // Request auth token from backend
             const response = await fetch('/api/liveblocks-auth', {
