@@ -20,25 +20,35 @@ export function BoardPage() {
   const { activeTool, setActiveTool, toggleChat } = useUiStore()
 
   const localUser = useMemo(() => {
-    if (user) {
+    // User is guaranteed to exist since Clerk is now required (see main.tsx)
+    if (!user) {
+      // This shouldn't happen in production, but provide fallback for loading state
       return {
-        userId: user.id,
-        userName: user.firstName ?? user.username ?? 'Anonymous',
-        userColor: COLORS[Math.abs(user.id.charCodeAt(0)) % COLORS.length],
+        userId: 'loading',
+        userName: 'Loading...',
+        userColor: COLORS[0],
       }
     }
-    // When Clerk isn't configured or user not loaded, use a default user
+
     return {
-      userId: 'anonymous-' + Math.random().toString(36).substr(2, 9),
-      userName: 'Guest',
-      userColor: COLORS[Math.floor(Math.random() * COLORS.length)],
+      userId: user.id,
+      // Use firstName and lastName for full name, fallback to email
+      userName: (
+        [user.firstName, user.lastName]
+          .filter(Boolean)
+          .join(' ')
+          .trim() || user.emailAddresses[0]?.emailAddress.split('@')[0] || 'User'
+      ),
+      userColor: COLORS[Math.abs(user.id.charCodeAt(0)) % COLORS.length],
     }
   }, [user])
 
-  // Initialize Liveblocks with local user presence
-  const { objects, remoteUsers, createObject, updateObject, deleteObject, setCursor } = useLiveblocks(
-    localUser?.userId ?? 'anonymous'
-  )
+  // Initialize Liveblocks with authenticated user presence
+  const { objects, remoteUsers, createObject, updateObject, deleteObject, setCursor } = useLiveblocks({
+    userId: localUser.userId,
+    userName: localUser.userName,
+    userColor: localUser.userColor,
+  })
 
   const handleObjectUpdate = useCallback(
     (id: string, fields: Partial<BoardObject>) => {

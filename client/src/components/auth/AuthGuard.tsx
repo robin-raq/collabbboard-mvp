@@ -6,13 +6,6 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-
-  // If Clerk isn't configured, skip auth check
-  if (!clerkKey) {
-    return <>{children}</>
-  }
-
   const { isLoaded, isSignedIn } = useAuth()
 
   if (!isLoaded) {

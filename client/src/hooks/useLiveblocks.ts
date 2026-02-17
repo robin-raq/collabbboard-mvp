@@ -18,7 +18,19 @@ interface UseLiveboardsReturn {
   setCursor: (x: number, y: number) => void
 }
 
-export function useLiveblocks(userId: string): UseLiveboardsReturn {
+interface UseLiveblocksDeps {
+  userId: string
+  userName: string
+  userColor: string
+}
+
+export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsReturn {
+  // Support both old (string) and new (object) parameter formats
+  const { userId, userName, userColor } =
+    typeof deps === 'string'
+      ? { userId: deps, userName: 'User', userColor: '#3B82F6' }
+      : deps
+
   const objectsStorage = useStorage((root) => {
     const objects = root.objects as Record<string, BoardObject> | undefined
     return objects || {}
@@ -77,19 +89,19 @@ export function useLiveblocks(userId: string): UseLiveboardsReturn {
 
   const setCursorMutation = useMutation(
     ({ setMyPresence }, x: number, y: number) => {
-      setMyPresence({ cursor: { x, y }, userId, userName: 'User', userColor: '#3B82F6' })
+      setMyPresence({ cursor: { x, y }, userId, userName, userColor })
     },
-    [userId]
+    [userId, userName, userColor]
   )
 
-  // Initialize presence with user info when component mounts
+  // Initialize presence with authenticated user info
   useEffect(() => {
     updateMyPresence({
       userId,
-      userName: userId.startsWith('anonymous') ? 'Guest' : 'User',
-      userColor: '#3B82F6',
+      userName,
+      userColor,
     })
-  }, [userId, updateMyPresence])
+  }, [userId, userName, userColor, updateMyPresence])
 
   const objects = objectsStorage ?? {}
 

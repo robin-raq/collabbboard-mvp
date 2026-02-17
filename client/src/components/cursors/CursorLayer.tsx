@@ -19,26 +19,33 @@ export function CursorLayer({ remoteUsers }: CursorLayerProps) {
 
         return (
           <Group key={user.userId} x={user.cursor.x} y={user.cursor.y}>
-            {/* Cursor dot */}
+            {/* Cursor pointer dot */}
             <Circle
-              radius={4}
+              radius={5}
               fill={user.userColor}
               stroke="white"
-              strokeWidth={1}
+              strokeWidth={2}
             />
-            {/* Name label */}
-            <Text
-              x={8}
-              y={-6}
-              text={user.userName}
-              fontSize={11}
-              fontFamily="system-ui, sans-serif"
-              fill="white"
-              padding={2}
-            />
-            {/* Label background */}
-            <Group x={6} y={-10}>
-              {/* Rendered behind by Konva draw order — simplified for MVP */}
+
+            {/* Name label with background */}
+            <Group x={12} y={-8}>
+              {/* Background rectangle for readability */}
+              <Circle
+                radius={20}
+                fill={user.userColor}
+                opacity={0.9}
+              />
+              {/* User name text */}
+              <Text
+                x={-8}
+                y={-5}
+                text={user.userName}
+                fontSize={12}
+                fontFamily="system-ui, sans-serif"
+                fontStyle="bold"
+                fill="white"
+                align="center"
+              />
             </Group>
           </Group>
         )
