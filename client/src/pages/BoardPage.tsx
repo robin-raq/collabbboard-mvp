@@ -1,12 +1,12 @@
 import { useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import { useUser } from '@clerk/clerk-react'
 import { Board } from '../components/canvas/Board'
 import { ToolPicker } from '../components/toolbar/ToolPicker'
 import { ZoomControls } from '../components/toolbar/ZoomControls'
 import { PresenceBar } from '../components/toolbar/PresenceBar'
 import { CursorLayer } from '../components/cursors/CursorLayer'
 import { ChatPanel } from '../components/chat/ChatPanel'
+import { useOptionalUser } from '../hooks/useOptionalUser'
 import { useLiveblocks } from '../hooks/useLiveblocks'
 import { useUiStore } from '../stores/uiStore'
 import type { BoardObject } from '../../../shared/types'
@@ -16,15 +16,22 @@ const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'
 
 export function BoardPage() {
   const { boardId } = useParams<{ boardId: string }>()
-  const { user } = useUser()
+  const { user } = useOptionalUser()
   const { activeTool, setActiveTool, toggleChat } = useUiStore()
 
   const localUser = useMemo(() => {
-    if (!user) return null
+    if (user) {
+      return {
+        userId: user.id,
+        userName: user.firstName ?? user.username ?? 'Anonymous',
+        userColor: COLORS[Math.abs(user.id.charCodeAt(0)) % COLORS.length],
+      }
+    }
+    // When Clerk isn't configured or user not loaded, use a default user
     return {
-      userId: user.id,
-      userName: user.firstName ?? user.username ?? 'Anonymous',
-      userColor: COLORS[Math.abs(user.id.charCodeAt(0)) % COLORS.length],
+      userId: 'anonymous-' + Math.random().toString(36).substr(2, 9),
+      userName: 'Guest',
+      userColor: COLORS[Math.floor(Math.random() * COLORS.length)],
     }
   }, [user])
 
@@ -42,11 +49,11 @@ export function BoardPage() {
 
   const handleObjectCreate = useCallback(
     (x: number, y: number) => {
-      if (!user || activeTool === 'select') return
-      createObject({ type: activeTool as BoardObject['type'], x, y }, user.id)
+      if (activeTool === 'select') return
+      createObject({ type: activeTool as BoardObject['type'], x, y }, localUser.userId)
       setActiveTool('select') // Switch back to select after creating
     },
-    [user, activeTool, setActiveTool, createObject]
+    [activeTool, setActiveTool, createObject, localUser.userId]
   )
 
   const handleCursorMove = useCallback(
