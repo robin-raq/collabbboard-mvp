@@ -46,25 +46,22 @@ COPY --from=backend-builder /app/server/node_modules ./node_modules
 COPY --from=backend-builder /app/server/package*.json ./
 
 # Create a script to inject environment variables into index.html at startup
-RUN cat > /app/inject-env.js << 'EOF'
-const fs = require('fs');
-const path = require('path');
+RUN cat > /app/inject-env.sh << 'EOF'
+#!/bin/sh
+INDEX_FILE="/app/client/dist/index.html"
 
-const indexPath = path.join(__dirname, 'client/dist/index.html');
-let html = fs.readFileSync(indexPath, 'utf8');
+# Create the script that will be injected
+ENV_SCRIPT="<script>
+  window.__VITE_CLERK_PUBLISHABLE_KEY = '${VITE_CLERK_PUBLISHABLE_KEY}';
+  window.__VITE_LIVEBLOCKS_PUBLIC_KEY = '${VITE_LIVEBLOCKS_PUBLIC_KEY}';
+  window.__VITE_API_URL = '${VITE_API_URL:-/api}';
+</script>"
 
-// Inject environment variables as window globals before the app loads
-const envScript = `
-<script>
-  window.__VITE_CLERK_PUBLISHABLE_KEY = '${process.env.VITE_CLERK_PUBLISHABLE_KEY || ''}';
-  window.__VITE_LIVEBLOCKS_PUBLIC_KEY = '${process.env.VITE_LIVEBLOCKS_PUBLIC_KEY || ''}';
-  window.__VITE_API_URL = '${process.env.VITE_API_URL || '/api'}';
-</script>
-`;
-
-html = html.replace('<head>', '<head>' + envScript);
-fs.writeFileSync(indexPath, html);
+# Insert the script into index.html right after <head>
+sed -i "s|<head>|<head>${ENV_SCRIPT}|" "$INDEX_FILE"
 EOF
+
+RUN chmod +x /app/inject-env.sh
 
 # Expose port
 EXPOSE 3001
@@ -75,4 +72,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
 
 # Set working directory and start
 WORKDIR /app
-CMD ["sh", "-c", "node inject-env.js && node server/src/index.js"]
+CMD ["sh", "-c", "/app/inject-env.sh && node server/src/index.js"]
