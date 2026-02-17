@@ -24,6 +24,15 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// Config endpoint - return frontend configuration (no auth needed)
+app.get('/api/config', (_req, res) => {
+  res.json({
+    clerkPublishableKey: process.env.VITE_CLERK_PUBLISHABLE_KEY,
+    liveblocksPublicKey: process.env.VITE_LIVEBLOCKS_PUBLIC_KEY,
+    apiUrl: process.env.VITE_API_URL || '/api',
+  })
+})
+
 // API routes
 app.use('/api/boards', boardsRouter)
 app.use('/api/ai', aiRouter)
