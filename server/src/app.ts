@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { Liveblocks } from '@liveblocks/node'
+import { getAuth } from '@clerk/express'
 import { clerkAuth } from './middleware/auth.js'
 import boardsRouter from './routes/boards.js'
 import aiRouter from './routes/ai.js'
@@ -31,6 +33,43 @@ app.get('/api/config', (_req, res) => {
     liveblocksPublicKey: process.env.VITE_LIVEBLOCKS_PUBLIC_KEY,
     apiUrl: process.env.VITE_API_URL || '/api',
   })
+})
+
+// Liveblocks auth endpoint - called by frontend to get access token
+app.post('/api/liveblocks-auth', async (req, res) => {
+  try {
+    const auth = getAuth(req)
+
+    if (!auth.userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const secret = process.env.LIVEBLOCKS_SECRET_KEY
+    if (!secret) {
+      console.error('LIVEBLOCKS_SECRET_KEY not configured')
+      return res.status(500).json({ error: 'Server configuration error' })
+    }
+
+    const client = new Liveblocks({ secret })
+
+    // Generate a session token for the authenticated user
+    const session = client.prepareSession(auth.userId, {
+      userInfo: {
+        name: auth.user?.fullName || auth.user?.primaryEmailAddress?.emailAddress || 'Anonymous',
+        avatar: auth.user?.imageUrl || undefined,
+      },
+    })
+
+    // Allow access to any room (room authorization happens at the room level)
+    session.allow(`*`, session.FULL_ACCESS)
+
+    const { body } = await session.authorize()
+
+    res.json(body)
+  } catch (error) {
+    console.error('Liveblocks auth error:', error)
+    res.status(500).json({ error: 'Failed to authenticate with Liveblocks' })
+  }
 })
 
 // API routes

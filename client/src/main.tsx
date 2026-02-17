@@ -44,7 +44,23 @@ async function initializeApp() {
     // Root provider stack - Clerk is now required
     const root = (
       <ClerkProvider publishableKey={clerkPubKey}>
-        <LiveblocksProvider publicApiKey={liveblocksApiKey}>
+        <LiveblocksProvider
+          publicApiKey={liveblocksApiKey}
+          authEndpoint={async (room) => {
+            // Request auth token from backend
+            const response = await fetch('/api/liveblocks-auth', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ room }),
+            })
+
+            if (!response.ok) {
+              throw new Error(`Auth failed with status ${response.status}`)
+            }
+
+            return await response.json()
+          }}
+        >
           <App />
         </LiveblocksProvider>
       </ClerkProvider>
