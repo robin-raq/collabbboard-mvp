@@ -45,22 +45,8 @@ COPY --from=backend-builder /app/server/dist/server ./server
 COPY --from=backend-builder /app/server/node_modules ./node_modules
 COPY --from=backend-builder /app/server/package*.json ./
 
-# Create a script to inject environment variables into index.html at startup
-RUN cat > /app/inject-env.sh << 'EOF'
-#!/bin/sh
-INDEX_FILE="/app/client/dist/index.html"
-
-# Create the script that will be injected
-ENV_SCRIPT="<script>
-  window.__VITE_CLERK_PUBLISHABLE_KEY = '${VITE_CLERK_PUBLISHABLE_KEY}';
-  window.__VITE_LIVEBLOCKS_PUBLIC_KEY = '${VITE_LIVEBLOCKS_PUBLIC_KEY}';
-  window.__VITE_API_URL = '${VITE_API_URL:-/api}';
-</script>"
-
-# Insert the script into index.html right after <head>
-sed -i "s|<head>|<head>${ENV_SCRIPT}|" "$INDEX_FILE"
-EOF
-
+# Copy the injection script
+COPY inject-env.sh /app/inject-env.sh
 RUN chmod +x /app/inject-env.sh
 
 # Expose port
