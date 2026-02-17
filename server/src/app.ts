@@ -1,8 +1,13 @@
 import express from 'express'
 import cors from 'cors'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { clerkAuth } from './middleware/auth.js'
 import boardsRouter from './routes/boards.js'
 import aiRouter from './routes/ai.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const app = express()
 
@@ -22,5 +27,18 @@ app.get('/health', (_req, res) => {
 // API routes
 app.use('/api/boards', boardsRouter)
 app.use('/api/ai', aiRouter)
+
+// Serve static frontend files in production
+const frontendPath = path.join(__dirname, '../../client/dist')
+app.use(express.static(frontendPath, { maxAge: '1d' }))
+
+// SPA fallback: serve index.html for all non-API routes
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(frontendPath, 'index.html'), (err) => {
+    if (err) {
+      res.status(500).json({ error: 'Could not serve index.html' })
+    }
+  })
+})
 
 export default app
