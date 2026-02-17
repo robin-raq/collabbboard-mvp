@@ -4,14 +4,8 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files and config
-COPY client/package*.json ./client/
-COPY client/tsconfig.json ./client/
-COPY client/tsconfig.app.json ./client/
-COPY client/tsconfig.node.json ./client/
-COPY client/vite.config.ts ./client/
-COPY client/index.html ./client/
-COPY client/src ./client/src
+# Copy entire client directory and shared types
+COPY client ./client
 COPY shared ./shared
 
 # Install dependencies
@@ -27,10 +21,8 @@ FROM node:20-alpine AS backend-builder
 
 WORKDIR /app
 
-# Copy package files
-COPY server/package*.json ./server/
-COPY server/tsconfig.json ./server/
-COPY server/src ./server/src
+# Copy entire server directory and shared types
+COPY server ./server
 COPY shared ./shared
 
 # Install dependencies
