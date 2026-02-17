@@ -23,6 +23,8 @@ WORKDIR /app
 
 # Copy package files
 COPY server/package*.json ./server/
+COPY server/tsconfig.json ./server/
+COPY server/src ./server/src
 COPY shared ./shared
 
 # Install dependencies
