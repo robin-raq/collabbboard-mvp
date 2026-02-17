@@ -12,11 +12,11 @@
 - [x] Deselect (click empty area)
 - [x] Sticky note visual feedback (blue border when selected)
 
-### ❓ Real-time Sync Between 2+ Users
-- [ ] User A creates sticky note → User B sees it instantly
-- [ ] User A edits sticky note → User B sees text update
-- [ ] User A deletes sticky note → User B sees it disappear
-- [ ] Changes persist and sync in real-time
+### ✅ Real-time Sync Between 2+ Users
+- [x] User A creates sticky note → User B sees it instantly
+- [x] User A edits sticky note → User B sees text update
+- [x] User A deletes sticky note → User B sees it disappear
+- [x] Changes persist and sync in real-time
 
 ### ❓ Multiplayer Cursors with Name Labels
 - [ ] User B sees User A's cursor moving
