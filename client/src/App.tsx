@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthGuard } from './components/auth/AuthGuard'
-import { BoardPage } from './pages/BoardPage'
+import { BoardPageWrapper } from './pages/BoardPageWrapper'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -21,7 +21,7 @@ function App() {
           path="/board/:boardId"
           element={
             <AuthGuard>
-              <BoardPage />
+              <BoardPageWrapper />
             </AuthGuard>
           }
         />
