@@ -37,15 +37,24 @@ async function initializeApp() {
       )
     }
 
-    // Get Liveblocks public key for direct client connection
-    const liveblocksPublicKey = config.liveblocksPublicKey || import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
+    const apiBase = (config.apiUrl || import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+    const liveblocksAuthUrl = apiBase ? `${apiBase}/api/liveblocks-auth` : '/api/liveblocks-auth'
 
-    if (!liveblocksPublicKey) {
-      console.error('Missing VITE_LIVEBLOCKS_PUBLIC_KEY')
-      throw new Error(
-        'Missing VITE_LIVEBLOCKS_PUBLIC_KEY environment variable. ' +
-        'Get this from https://liveblocks.io/dashboard'
-      )
+    // Auth endpoint is required for storage writes (stickies, shapes). Server must set LIVEBLOCKS_SECRET_KEY.
+    const liveblocksConfig = {
+      authEndpoint: async ({ room }: { room: string }) => {
+        const res = await fetch(liveblocksAuthUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room }),
+          credentials: 'include',
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }))
+          throw new Error(err.error || err.hint || `Liveblocks auth failed: ${res.status}`)
+        }
+        return res.json()
+      },
     }
 
     // Root provider stack - Clerk is now required
@@ -53,7 +62,7 @@ async function initializeApp() {
     const root = (
       <ErrorBoundary>
         <ClerkProvider publishableKey={clerkPubKey}>
-          <LiveblocksProvider publicApiKey={liveblocksPublicKey}>
+          <LiveblocksProvider {...liveblocksConfig}>
             <App />
           </LiveblocksProvider>
         </ClerkProvider>

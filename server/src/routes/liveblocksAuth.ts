@@ -1,5 +1,4 @@
 import { Router, type Request, type Response } from 'express'
-import { getAuth } from '@clerk/express'
 import { Liveblocks } from '@liveblocks/node'
 import { getBoard } from '../services/boardService.js'
 
@@ -27,7 +26,8 @@ router.post('/', async (req: Request, res: Response) => {
     return
   }
 
-  const auth = getAuth(req)
+  // Get userId from Clerk middleware (stored in req.auth by clerkAuth middleware)
+  const auth = (req as any).auth
   const userId = auth?.userId
   if (!userId) {
     res.status(401).json({ error: 'Unauthorized', hint: 'Sign in to use the board' })
