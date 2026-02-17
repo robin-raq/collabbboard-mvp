@@ -5,13 +5,17 @@ import { LiveblocksProvider } from '@liveblocks/react'
 import './index.css'
 import App from './App.tsx'
 
-// Get keys from injected window variables (set by inject-env.js at runtime)
-// or fall back to build-time env vars for local development
+// Get keys from window variables (injected at runtime) or env vars (build time)
 const clerkPubKey = (window as any).__VITE_CLERK_PUBLISHABLE_KEY || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 const liveblocksApiKey = (window as any).__VITE_LIVEBLOCKS_PUBLIC_KEY || import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
 
+// Log for debugging
+console.log('Clerk Key:', clerkPubKey ? '✓ Set' : '✗ Missing')
+console.log('Liveblocks Key:', liveblocksApiKey ? '✓ Set' : '✗ Missing')
+
 // Clerk is now required for authentication
 if (!clerkPubKey) {
+  console.error('Missing VITE_CLERK_PUBLISHABLE_KEY')
   throw new Error(
     'Missing VITE_CLERK_PUBLISHABLE_KEY environment variable. ' +
     'See SETUP_CLERK.md for instructions on how to set up Clerk authentication.'
@@ -19,6 +23,7 @@ if (!clerkPubKey) {
 }
 
 if (!liveblocksApiKey) {
+  console.error('Missing VITE_LIVEBLOCKS_PUBLIC_KEY')
   throw new Error(
     'Missing VITE_LIVEBLOCKS_PUBLIC_KEY environment variable. ' +
     'Get this from https://liveblocks.io/dashboard'
