@@ -4,8 +4,12 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and config
 COPY client/package*.json ./client/
+COPY client/tsconfig.json ./client/
+COPY client/vite.config.ts ./client/
+COPY client/index.html ./client/
+COPY client/src ./client/src
 COPY shared ./shared
 
 # Install dependencies
