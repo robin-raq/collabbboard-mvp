@@ -38,13 +38,13 @@ WORKDIR /app
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
-# Copy backend compiled code from the nested dist structure
-COPY --from=backend-builder /app/server/dist/server/src ./src
+# Copy backend compiled code structure: dist/server/src -> server/src
+COPY --from=backend-builder /app/server/dist/server ./server
 COPY --from=backend-builder /app/server/node_modules ./node_modules
 COPY --from=backend-builder /app/server/package*.json ./
 
-# Copy frontend build to be served as static files
-COPY --from=frontend-builder /app/client/dist ./public
+# Copy frontend build to match the expected path (../../client/dist from src)
+COPY --from=frontend-builder /app/client/dist ./client/dist
 
 # Expose port
 EXPOSE 3001
@@ -53,5 +53,6 @@ EXPOSE 3001
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3001/health || exit 1
 
-# Start the server
-CMD ["node", "src/index.js"]
+# Set working directory and start
+WORKDIR /app
+CMD ["node", "server/src/index.js"]
