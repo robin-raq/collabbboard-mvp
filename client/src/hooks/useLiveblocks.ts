@@ -12,6 +12,7 @@ interface RemoteUser {
 interface UseLiveboardsReturn {
   objects: Record<string, BoardObject>
   remoteUsers: RemoteUser[]
+  currentUserCursor?: { x: number; y: number }
   createObject: (params: Partial<BoardObject> & { type: BoardObject['type']; x: number; y: number }, userId: string) => void
   updateObject: (id: string, fields: Partial<BoardObject>) => void
   deleteObject: (id: string) => void
@@ -36,7 +37,7 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
     return objects || {}
   })
   const othersPresence = useOthers()
-  const [_myPresence, updateMyPresence] = useMyPresence()
+  const [myPresence, updateMyPresence] = useMyPresence()
 
   const createObjectMutation = useMutation(
     ({ storage }, params: Partial<BoardObject> & { type: BoardObject['type']; x: number; y: number }, creatorId: string) => {
@@ -115,9 +116,12 @@ export function useLiveblocks(deps: UseLiveblocksDeps | string): UseLiveboardsRe
     }
   })
 
+  const currentUserCursor = (myPresence as Record<string, unknown> | null)?.cursor as { x: number; y: number } | undefined
+
   return {
     objects,
     remoteUsers,
+    currentUserCursor,
     createObject: (params, userId) => createObjectMutation(params, userId),
     updateObject: updateObjectMutation,
     deleteObject: deleteObjectMutation,

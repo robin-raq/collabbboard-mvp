@@ -44,7 +44,7 @@ export function BoardPage() {
   }, [user])
 
   // Initialize Liveblocks with authenticated user presence
-  const { objects, remoteUsers, createObject, updateObject, deleteObject, setCursor } = useLiveblocks({
+  const { objects, remoteUsers, currentUserCursor, createObject, updateObject, deleteObject, setCursor } = useLiveblocks({
     userId: localUser.userId,
     userName: localUser.userName,
     userColor: localUser.userColor,
@@ -106,7 +106,7 @@ export function BoardPage() {
         onObjectCreate={handleObjectCreate}
         onCursorMove={handleCursorMove}
       >
-        <CursorLayer remoteUsers={remoteUsers} />
+        <CursorLayer remoteUsers={remoteUsers} currentUserCursor={currentUserCursor} currentUserColor={localUser.userColor} />
       </Board>
 
       {/* Toolbar overlay */}
