@@ -1,5 +1,4 @@
 import { useRef, useState, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { Group, Rect, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from '../../../../shared/types'
@@ -49,11 +48,6 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
     setIsEditing(true)
   }
 
-  const handleEditChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditText(e.target.value)
-    console.log('Text changed:', e.target.value)
-  }
-
   const saveEdit = () => {
     console.log('Saving edit:', editText)
     onUpdate({ text: editText })
@@ -65,61 +59,87 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
     setIsEditing(false)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && e.ctrlKey) {
-      saveEdit()
-    } else if (e.key === 'Escape') {
-      cancelEdit()
-    }
-  }
+  // Only render the Konva group, not the textarea
+  // The textarea is handled by useEffect to avoid Konva issues
+  useEffect(() => {
+    if (isEditing) {
+      // Create a container for the edit modal
+      const container = document.createElement('div')
+      container.style.position = 'fixed'
+      container.style.top = '0'
+      container.style.left = '0'
+      container.style.right = '0'
+      container.style.bottom = '0'
+      container.style.display = 'flex'
+      container.style.alignItems = 'center'
+      container.style.justifyContent = 'center'
+      container.style.backgroundColor = 'rgba(0, 0, 0, 0.3)'
+      container.style.zIndex = '1000'
 
-  // Render textarea outside of Konva canvas using portal
-  if (isEditing) {
-    return (
-      <>
-        {createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(0, 0, 0, 0.3)',
-              zIndex: 1000,
-            }}
-            onClick={saveEdit}
-          >
-            <textarea
-              autoFocus
-              value={editText}
-              onChange={handleEditChange}
-              onKeyDown={handleKeyDown}
-              onClick={(e) => e.stopPropagation()}
-              placeholder="Type your note here... (Ctrl+Enter to save, Escape to cancel)"
-              style={{
-                width: '400px',
-                height: '300px',
-                padding: '16px',
-                fontSize: '14px',
-                fontFamily: 'system-ui, sans-serif',
-                border: '2px solid #2563EB',
-                borderRadius: '8px',
-                boxSizing: 'border-box',
-                resize: 'none',
-                outline: 'none',
-                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
-              }}
-            />
-          </div>,
-          document.body
-        )}
-      </>
-    )
-  }
+      // Create textarea
+      const textarea = document.createElement('textarea')
+      textarea.value = editText
+      textarea.placeholder = 'Type your note here... (Ctrl+Enter to save, Escape to cancel)'
+      textarea.style.width = '400px'
+      textarea.style.height = '300px'
+      textarea.style.padding = '16px'
+      textarea.style.fontSize = '14px'
+      textarea.style.fontFamily = 'system-ui, sans-serif'
+      textarea.style.border = '2px solid #2563EB'
+      textarea.style.borderRadius = '8px'
+      textarea.style.boxSizing = 'border-box'
+      textarea.style.resize = 'none'
+      textarea.style.outline = 'none'
+      textarea.style.boxShadow = '0 10px 40px rgba(0, 0, 0, 0.3)'
+
+      // Handle events
+      const handleChange = (e: Event) => {
+        const target = e.target as HTMLTextAreaElement
+        setEditText(target.value)
+        console.log('Text changed:', target.value)
+      }
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Enter' && e.ctrlKey) {
+          saveEdit()
+        } else if (e.key === 'Escape') {
+          cancelEdit()
+        }
+      }
+
+      const handleClick = (e: MouseEvent) => {
+        if (e.target === container) {
+          saveEdit()
+        }
+      }
+
+      const handleTextareaClick = (e: MouseEvent) => {
+        e.stopPropagation()
+      }
+
+      textarea.addEventListener('change', handleChange)
+      textarea.addEventListener('input', handleChange)
+      textarea.addEventListener('keydown', handleKeyDown)
+      textarea.addEventListener('click', handleTextareaClick)
+      container.addEventListener('click', handleClick)
+
+      container.appendChild(textarea)
+      document.body.appendChild(container)
+
+      // Focus textarea
+      textarea.focus()
+
+      // Cleanup
+      return () => {
+        textarea.removeEventListener('change', handleChange)
+        textarea.removeEventListener('input', handleChange)
+        textarea.removeEventListener('keydown', handleKeyDown)
+        textarea.removeEventListener('click', handleTextareaClick)
+        container.removeEventListener('click', handleClick)
+        document.body.removeChild(container)
+      }
+    }
+  }, [isEditing, editText])
 
   return (
     <Group
