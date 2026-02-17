@@ -38,11 +38,10 @@ WORKDIR /app
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
-# Copy backend compiled code and dependencies
-# The backend builds to: /app/server/dist/server/src/
-COPY --from=backend-builder /app/server/dist/server ./src
-COPY --from=backend-builder /app/server/node_modules ./server/node_modules
-COPY --from=backend-builder /app/server/package*.json ./server/
+# Copy backend compiled code from the nested dist structure
+COPY --from=backend-builder /app/server/dist/server/src ./src
+COPY --from=backend-builder /app/server/node_modules ./node_modules
+COPY --from=backend-builder /app/server/package*.json ./
 
 # Copy frontend build to be served as static files
 COPY --from=frontend-builder /app/client/dist ./public
