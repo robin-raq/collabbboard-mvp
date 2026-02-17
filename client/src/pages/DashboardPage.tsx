@@ -5,6 +5,7 @@ import { UserButton } from '@clerk/clerk-react'
 export function DashboardPage() {
   const navigate = useNavigate()
   const [boards] = useState<{ id: string; name: string }[]>([])
+  const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
   const handleCreateBoard = () => {
     // For MVP: generate a random board ID and navigate directly
@@ -18,7 +19,7 @@ export function DashboardPage() {
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <h1 className="text-xl font-bold text-gray-900">CollabBoard AI</h1>
-          <UserButton />
+          {clerkKey && <UserButton />}
         </div>
       </header>
 
