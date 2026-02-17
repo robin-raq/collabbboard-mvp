@@ -1,19 +1,5 @@
 # Multi-stage build for CollabBoard MVP
-# Stage 1: Build backend (Express + TypeScript)
-FROM node:20-alpine AS backend-builder
-
-WORKDIR /app
-
-# Copy server and shared directories
-COPY server ./server
-COPY shared ./shared
-
-# Install dependencies and build
-WORKDIR /app/server
-RUN npm ci
-RUN npm run build
-
-# Stage 2: Build frontend (React + Vite)
+# Stage 1: Build frontend (React + Vite)
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
@@ -30,6 +16,20 @@ RUN npm ci
 ENV VITE_API_URL=/api
 RUN npm run build
 
+# Stage 2: Build backend (Express + TypeScript)
+FROM node:20-alpine AS backend-builder
+
+WORKDIR /app
+
+# Copy server and shared directories
+COPY server ./server
+COPY shared ./shared
+
+# Install dependencies and build
+WORKDIR /app/server
+RUN npm ci
+RUN npm run build
+
 # Stage 3: Production runtime
 FROM node:20-alpine
 
@@ -38,13 +38,13 @@ WORKDIR /app
 # Install curl for healthcheck
 RUN apk add --no-cache curl
 
-# Copy backend compiled code structure: dist/server/src -> server/src
+# Copy frontend dist first (needed by backend to serve static files)
+COPY --from=frontend-builder /app/client/dist ./client/dist
+
+# Copy backend compiled code
 COPY --from=backend-builder /app/server/dist/server ./server
 COPY --from=backend-builder /app/server/node_modules ./node_modules
 COPY --from=backend-builder /app/server/package*.json ./
-
-# Copy frontend build to match the expected path (../../client/dist from src)
-COPY --from=frontend-builder /app/client/dist ./client/dist
 
 # Expose port
 EXPOSE 3001
