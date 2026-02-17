@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { Group, Rect, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from '../../../../shared/types'
@@ -11,8 +11,18 @@ interface StickyNoteProps {
 
 export function StickyNote({ object, onUpdate }: StickyNoteProps) {
   const groupRef = useRef<Konva.Group>(null)
+  const textRef = useRef<Konva.Text>(null)
   const { selectedIds, setSelectedIds } = useUiStore()
   const isSelected = selectedIds.has(object.id)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editText, setEditText] = useState(object.text ?? '')
+
+  useEffect(() => {
+    // Update editing text when object text changes from external sources
+    if (!isEditing) {
+      setEditText(object.text ?? '')
+    }
+  }, [object.text, isEditing])
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     onUpdate({ x: e.target.x(), y: e.target.y() })
@@ -33,14 +43,76 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
     }
   }
 
+  const handleDoubleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    e.cancelBubble = true
+    setIsEditing(true)
+  }
+
+  const handleEditChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setEditText(e.target.value)
+  }
+
+  const saveEdit = () => {
+    onUpdate({ text: editText })
+    setIsEditing(false)
+  }
+
+  const cancelEdit = () => {
+    setEditText(object.text ?? '')
+    setIsEditing(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+      saveEdit()
+    } else if (e.key === 'Escape') {
+      cancelEdit()
+    }
+  }
+
+  if (isEditing) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          left: groupRef.current?.getAbsolutePosition().x ?? 0,
+          top: groupRef.current?.getAbsolutePosition().y ?? 0,
+          width: (object.width ?? 200),
+          height: (object.height ?? 200),
+          zIndex: 1000,
+        }}
+      >
+        <textarea
+          autoFocus
+          value={editText}
+          onChange={handleEditChange}
+          onKeyDown={handleKeyDown}
+          onBlur={saveEdit}
+          style={{
+            width: '100%',
+            height: '100%',
+            padding: '12px',
+            fontSize: '14px',
+            fontFamily: 'system-ui, sans-serif',
+            border: '2px solid #2563EB',
+            borderRadius: '4px',
+            boxSizing: 'border-box',
+            resize: 'none',
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <Group
       ref={groupRef}
       x={object.x}
       y={object.y}
-      draggable
+      draggable={!isEditing}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
+      onDblClick={handleDoubleClick}
     >
       {/* Shadow */}
       <Rect
@@ -62,6 +134,7 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
       />
       {/* Text */}
       <Text
+        ref={textRef}
         x={12}
         y={12}
         width={(object.width ?? 200) - 24}
