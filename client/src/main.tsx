@@ -5,8 +5,10 @@ import { LiveblocksProvider } from '@liveblocks/react'
 import './index.css'
 import App from './App.tsx'
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
-const liveblocksApiKey = import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
+// Get keys from injected window variables (set by inject-env.js at runtime)
+// or fall back to build-time env vars for local development
+const clerkPubKey = (window as any).__VITE_CLERK_PUBLISHABLE_KEY || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const liveblocksApiKey = (window as any).__VITE_LIVEBLOCKS_PUBLIC_KEY || import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
 
 // Clerk is now required for authentication
 if (!clerkPubKey) {
