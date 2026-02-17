@@ -56,5 +56,3 @@ DEPLOYMENT.md
 .editorconfig
 .prettierrc
 .eslintrc*
-tsconfig.json
-vite.config.ts
