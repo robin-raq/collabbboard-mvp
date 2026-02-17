@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import * as Y from 'yjs'
 import type { BoardObject } from '../../../shared/types.js'
 
@@ -12,7 +13,7 @@ export function createObject(
   userId: string
 ): BoardObject {
   const objects = doc.getMap<BoardObject>('objects')
-  const id = crypto.randomUUID()
+  const id = randomUUID()
 
   const obj: BoardObject = {
     id,
