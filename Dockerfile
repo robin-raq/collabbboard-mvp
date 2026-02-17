@@ -4,6 +4,11 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
+# Accept build arguments for environment variables
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_LIVEBLOCKS_PUBLIC_KEY
+ARG VITE_API_URL=/api
+
 # Copy client and shared types
 COPY client ./client
 COPY shared ./shared
@@ -12,8 +17,10 @@ COPY shared ./shared
 WORKDIR /app/client
 RUN npm ci
 
-# Build the frontend
-ENV VITE_API_URL=/api
+# Build the frontend with environment variables
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY}
+ENV VITE_LIVEBLOCKS_PUBLIC_KEY=${VITE_LIVEBLOCKS_PUBLIC_KEY}
 RUN npm run build
 
 # Stage 2: Build backend (Express + TypeScript)
