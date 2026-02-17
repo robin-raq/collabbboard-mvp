@@ -32,27 +32,21 @@ async function initializeApp() {
       )
     }
 
+    // Get Liveblocks public key for direct client connection
+    const liveblocksPublicKey = config.liveblocksPublicKey || import.meta.env.VITE_LIVEBLOCKS_PUBLIC_KEY
+
+    if (!liveblocksPublicKey) {
+      console.error('Missing VITE_LIVEBLOCKS_PUBLIC_KEY')
+      throw new Error(
+        'Missing VITE_LIVEBLOCKS_PUBLIC_KEY environment variable. ' +
+        'Get this from https://liveblocks.io/dashboard'
+      )
+    }
+
     // Root provider stack - Clerk is now required
     const root = (
       <ClerkProvider publishableKey={clerkPubKey}>
-        <LiveblocksProvider
-          authEndpoint={async (room) => {
-            // Request auth token from backend
-            // IMPORTANT: credentials: 'include' sends the Clerk session cookie
-            const response = await fetch('/api/liveblocks-auth', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ room }),
-            })
-
-            if (!response.ok) {
-              throw new Error(`Auth failed with status ${response.status}`)
-            }
-
-            return await response.json()
-          }}
-        >
+        <LiveblocksProvider publicApiKey={liveblocksPublicKey}>
           <App />
         </LiveblocksProvider>
       </ClerkProvider>

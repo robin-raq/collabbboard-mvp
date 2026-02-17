@@ -2,9 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { Liveblocks } from '@liveblocks/node'
-import { getAuth } from '@clerk/express'
-import { clerkAuth, requireAuth } from './middleware/auth.js'
+import { clerkAuth } from './middleware/auth.js'
 import boardsRouter from './routes/boards.js'
 import aiRouter from './routes/ai.js'
 
@@ -33,65 +31,6 @@ app.get('/api/config', (_req, res) => {
     liveblocksPublicKey: process.env.VITE_LIVEBLOCKS_PUBLIC_KEY,
     apiUrl: process.env.VITE_API_URL || '/api',
   })
-})
-
-// Liveblocks auth endpoint - called by frontend to get access token
-app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
-  try {
-    // At this point, requireAuth has already verified the user exists
-    const auth = (req as any).auth
-    const userId = auth?.userId || 'unknown-user'
-    console.log('Liveblocks auth attempt - userId:', userId)
-
-    const secret = process.env.LIVEBLOCKS_SECRET_KEY
-    if (!secret) {
-      console.error('LIVEBLOCKS_SECRET_KEY not configured')
-      return res.status(500).json({ error: 'Server configuration error - missing secret' })
-    }
-
-    try {
-      console.log('Creating Liveblocks client with secret key')
-      const client = new Liveblocks({ secret })
-
-      console.log('Preparing Liveblocks session for user:', userId)
-      const session = client.prepareSession(userId, {
-        userInfo: {
-          name: userId,
-        },
-      })
-
-      console.log('Granting access to all rooms...')
-      // Grant access to all rooms
-      session.allow('*', session.FULL_ACCESS)
-
-      console.log('Authorizing session...')
-      const result = await session.authorize()
-
-      console.log('Session authorized, result type:', typeof result)
-      console.log('Result keys:', result ? Object.keys(result) : 'null')
-
-      if (result && result.body) {
-        console.log('Returning auth body')
-        res.json(result.body)
-      } else if (result) {
-        console.log('Returning result directly')
-        res.json(result)
-      } else {
-        console.error('Unexpected authorize result:', result)
-        res.status(500).json({ error: 'Unexpected Liveblocks response' })
-      }
-    } catch (liveblocksError) {
-      console.error('Liveblocks SDK error:', liveblocksError)
-      throw liveblocksError
-    }
-  } catch (error) {
-    console.error('Liveblocks auth error:', error instanceof Error ? error.message : String(error))
-    console.error('Full error:', error)
-    res.status(500).json({
-      error: 'Failed to authenticate with Liveblocks',
-      details: error instanceof Error ? error.message : String(error)
-    })
-  }
 })
 
 // API routes
