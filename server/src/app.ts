@@ -40,12 +40,8 @@ app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
   try {
     // At this point, requireAuth has already verified the user exists
     const auth = (req as any).auth
-    console.log('Liveblocks auth attempt - userId:', auth?.userId)
-
-    if (!auth?.userId) {
-      console.error('No userId in auth:', auth)
-      return res.status(401).json({ error: 'Unauthorized - no user ID' })
-    }
+    const userId = auth?.userId || 'unknown-user'
+    console.log('Liveblocks auth attempt - userId:', userId)
 
     const secret = process.env.LIVEBLOCKS_SECRET_KEY
     if (!secret) {
@@ -53,31 +49,35 @@ app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
       return res.status(500).json({ error: 'Server configuration error - missing secret' })
     }
 
-    console.log('Creating Liveblocks client...')
-    const client = new Liveblocks({ secret })
+    try {
+      console.log('Creating Liveblocks client...')
+      const client = new Liveblocks({ secret })
 
-    // Generate a session token for the authenticated user
-    // Use userId as display name since we don't have user object in this context
-    console.log('Preparing Liveblocks session for user:', auth.userId)
-    const session = client.prepareSession(auth.userId, {
-      userInfo: {
-        name: auth.userId || 'Anonymous',
-      },
-    })
+      console.log('Preparing Liveblocks session for user:', userId)
+      const session = client.prepareSession(userId, {
+        userInfo: {
+          name: userId,
+        },
+      })
 
-    // Allow access to any room (room authorization happens at the room level)
-    session.allow(`*`, session.FULL_ACCESS)
+      // Allow access to any room
+      session.allow('*', session.FULL_ACCESS)
 
-    console.log('Authorizing session...')
-    const { body } = await session.authorize()
+      console.log('Authorizing session...')
+      const { body } = await session.authorize()
 
-    console.log('Session authorized successfully')
-    res.json(body)
+      console.log('Session authorized successfully')
+      res.json(body)
+    } catch (liveblocksError) {
+      console.error('Liveblocks SDK error:', liveblocksError)
+      throw liveblocksError
+    }
   } catch (error) {
-    console.error('Liveblocks auth error:', error)
+    console.error('Liveblocks auth error:', error instanceof Error ? error.message : String(error))
+    console.error('Full error:', error)
     res.status(500).json({
       error: 'Failed to authenticate with Liveblocks',
-      message: error instanceof Error ? error.message : String(error)
+      details: error instanceof Error ? error.message : String(error)
     })
   }
 })
