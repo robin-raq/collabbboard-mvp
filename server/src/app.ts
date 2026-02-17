@@ -50,7 +50,7 @@ app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
     }
 
     try {
-      console.log('Creating Liveblocks client...')
+      console.log('Creating Liveblocks client with secret key')
       const client = new Liveblocks({ secret })
 
       console.log('Preparing Liveblocks session for user:', userId)
@@ -60,14 +60,26 @@ app.post('/api/liveblocks-auth', requireAuth, async (req, res) => {
         },
       })
 
-      // Allow access to any room
+      console.log('Granting access to all rooms...')
+      // Grant access to all rooms
       session.allow('*', session.FULL_ACCESS)
 
       console.log('Authorizing session...')
-      const { body } = await session.authorize()
+      const result = await session.authorize()
 
-      console.log('Session authorized successfully')
-      res.json(body)
+      console.log('Session authorized, result type:', typeof result)
+      console.log('Result keys:', result ? Object.keys(result) : 'null')
+
+      if (result && result.body) {
+        console.log('Returning auth body')
+        res.json(result.body)
+      } else if (result) {
+        console.log('Returning result directly')
+        res.json(result)
+      } else {
+        console.error('Unexpected authorize result:', result)
+        res.status(500).json({ error: 'Unexpected Liveblocks response' })
+      }
     } catch (liveblocksError) {
       console.error('Liveblocks SDK error:', liveblocksError)
       throw liveblocksError
