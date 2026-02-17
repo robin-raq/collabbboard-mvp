@@ -1,4 +1,4 @@
-import { Group, Circle, Text } from 'react-konva'
+import { Group, Circle, Text, Rect } from 'react-konva'
 
 interface RemoteUser {
   userId: string
@@ -28,23 +28,26 @@ export function CursorLayer({ remoteUsers }: CursorLayerProps) {
             />
 
             {/* Name label with background */}
-            <Group x={12} y={-8}>
-              {/* Background rectangle for readability */}
-              <Circle
-                radius={20}
+            <Group x={12} y={-5}>
+              {/* Background rectangle */}
+              <Rect
+                x={0}
+                y={0}
+                width={Math.max(user.userName.length * 7, 50)}
+                height={20}
                 fill={user.userColor}
-                opacity={0.9}
+                cornerRadius={3}
+                opacity={0.95}
               />
               {/* User name text */}
               <Text
-                x={-8}
-                y={-5}
+                x={4}
+                y={2}
                 text={user.userName}
                 fontSize={12}
                 fontFamily="system-ui, sans-serif"
                 fontStyle="bold"
                 fill="white"
-                align="center"
               />
             </Group>
           </Group>
