@@ -14,7 +14,18 @@ export function BoardPageWrapper() {
   }
 
   return (
-    <RoomProvider id={boardId} initialPresence={{ cursor: null, userId: '', userName: '', userColor: '' }}>
+    <RoomProvider
+      id={boardId}
+      initialPresence={{
+        cursor: null,
+        userId: '',
+        userName: '',
+        userColor: '',
+      }}
+      initialStorage={{
+        objects: {},
+      }}
+    >
       <BoardPage />
     </RoomProvider>
   )

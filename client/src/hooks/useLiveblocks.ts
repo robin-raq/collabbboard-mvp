@@ -10,7 +10,7 @@ interface RemoteUser {
 }
 
 interface UseLiveboardsReturn {
-  objects: Map<string, BoardObject>
+  objects: Record<string, BoardObject>
   remoteUsers: RemoteUser[]
   createObject: (params: Partial<BoardObject> & { type: BoardObject['type']; x: number; y: number }, userId: string) => void
   updateObject: (id: string, fields: Partial<BoardObject>) => void
@@ -20,18 +20,19 @@ interface UseLiveboardsReturn {
 
 export function useLiveblocks(userId: string): UseLiveboardsReturn {
   const objectsStorage = useStorage((root) => {
-    const objects = root.objects
-    return objects instanceof Map ? objects : new Map()
+    const objects = root.objects as Record<string, BoardObject> | undefined
+    return objects || {}
   })
   const othersPresence = useOthers()
   const [_myPresence, updateMyPresence] = useMyPresence()
 
   const createObjectMutation = useMutation(
     ({ storage }, params: Partial<BoardObject> & { type: BoardObject['type']; x: number; y: number }, creatorId: string) => {
-      const objects = storage.get('objects')
-      if (!(objects instanceof Map)) return
+      const objects = storage.get('objects') as unknown as Record<string, BoardObject>
+      if (!objects) return
 
       const id = crypto.randomUUID()
+      const objectCount = Object.keys(objects).length
       const obj: BoardObject = {
         id,
         type: params.type,
@@ -45,34 +46,31 @@ export function useLiveblocks(userId: string): UseLiveboardsReturn {
         strokeWidth: params.strokeWidth ?? 1,
         points: params.points,
         fontSize: params.fontSize,
-        zIndex: objects.size,
+        zIndex: objectCount,
         createdBy: creatorId,
         createdAt: Date.now(),
       }
 
-      objects.set(id, obj)
+      objects[id] = obj
     },
     []
   )
 
   const updateObjectMutation = useMutation(
     ({ storage }, id: string, fields: Partial<BoardObject>) => {
-      const objects = storage.get('objects')
-      if (!(objects instanceof Map)) return
+      const objects = storage.get('objects') as unknown as Record<string, BoardObject>
+      if (!objects || !objects[id]) return
 
-      const obj = objects.get(id)
-      if (!obj) return
-
-      Object.assign(obj, fields)
+      Object.assign(objects[id], fields)
     },
     []
   )
 
   const deleteObjectMutation = useMutation(
     ({ storage }, id: string) => {
-      const objects = storage.get('objects')
-      if (!(objects instanceof Map)) return
-      objects.delete(id)
+      const objects = storage.get('objects') as unknown as Record<string, BoardObject>
+      if (!objects) return
+      delete objects[id]
     },
     []
   )
@@ -86,16 +84,14 @@ export function useLiveblocks(userId: string): UseLiveboardsReturn {
 
   // Initialize presence with user info when component mounts
   useEffect(() => {
-    if (userId && userId !== 'anonymous') {
-      updateMyPresence({
-        userId,
-        userName: 'User',
-        userColor: '#3B82F6',
-      })
-    }
+    updateMyPresence({
+      userId,
+      userName: userId.startsWith('anonymous') ? 'Guest' : 'User',
+      userColor: '#3B82F6',
+    })
   }, [userId, updateMyPresence])
 
-  const objects = objectsStorage ?? new Map()
+  const objects = objectsStorage ?? {}
 
   const remoteUsers: RemoteUser[] = othersPresence.map((other) => {
     const presence = other.presence as Record<string, unknown> | null

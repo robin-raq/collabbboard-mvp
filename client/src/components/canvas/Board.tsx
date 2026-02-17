@@ -7,7 +7,7 @@ import { DotGrid } from './DotGrid'
 import { CanvasObject } from './CanvasObject'
 
 interface BoardProps {
-  objects: Map<string, BoardObject>
+  objects: Record<string, BoardObject> | Map<string, BoardObject>
   onObjectUpdate: (id: string, fields: Partial<BoardObject>) => void
   onObjectCreate: (x: number, y: number) => void
   onCursorMove: (x: number, y: number) => void
@@ -94,7 +94,10 @@ export function Board({ objects, onObjectUpdate, onObjectCreate, onCursorMove, c
   )
 
   // Sort objects by zIndex for rendering
-  const sortedObjects = Array.from(objects.values()).sort((a, b) => a.zIndex - b.zIndex)
+  const sortedObjects = (objects instanceof Map
+    ? Array.from(objects.values())
+    : Object.values(objects)
+  ).sort((a, b) => a.zIndex - b.zIndex)
 
   return (
     <Stage
