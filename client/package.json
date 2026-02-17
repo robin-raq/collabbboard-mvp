@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.60.1",
+    "@liveblocks/client": "^3.13.5",
+    "@liveblocks/react": "^3.13.5",
     "konva": "^10.2.0",
     "ky": "^1.14.3",
     "react": "^19.2.0",

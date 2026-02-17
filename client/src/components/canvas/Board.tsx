@@ -1,10 +1,9 @@
 import { useRef, useCallback } from 'react'
-import { Stage, Layer, Rect, Circle, Line, Text, Group } from 'react-konva'
+import { Stage, Layer } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from '../../../../shared/types'
 import { useUiStore } from '../../stores/uiStore'
 import { DotGrid } from './DotGrid'
-import { StickyNote } from './StickyNote'
 import { CanvasObject } from './CanvasObject'
 
 interface BoardProps {
@@ -81,7 +80,7 @@ export function Board({ objects, onObjectUpdate, onObjectCreate, onCursorMove, c
   )
 
   const handleMouseMove = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()

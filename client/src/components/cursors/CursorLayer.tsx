@@ -1,22 +1,28 @@
 import { Group, Circle, Text } from 'react-konva'
-import type { AwarenessState } from '../../../../shared/types'
+
+interface RemoteUser {
+  userId: string
+  userName: string
+  userColor: string
+  cursor?: { x: number; y: number }
+}
 
 interface CursorLayerProps {
-  remoteUsers: Map<number, AwarenessState>
+  remoteUsers: RemoteUser[]
 }
 
 export function CursorLayer({ remoteUsers }: CursorLayerProps) {
   return (
     <Group>
-      {Array.from(remoteUsers.entries()).map(([clientId, state]) => {
-        if (!state.cursor) return null
+      {remoteUsers.map((user) => {
+        if (!user.cursor) return null
 
         return (
-          <Group key={clientId} x={state.cursor.x} y={state.cursor.y}>
+          <Group key={user.userId} x={user.cursor.x} y={user.cursor.y}>
             {/* Cursor dot */}
             <Circle
               radius={4}
-              fill={state.userColor}
+              fill={user.userColor}
               stroke="white"
               strokeWidth={1}
             />
@@ -24,7 +30,7 @@ export function CursorLayer({ remoteUsers }: CursorLayerProps) {
             <Text
               x={8}
               y={-6}
-              text={state.userName}
+              text={user.userName}
               fontSize={11}
               fontFamily="system-ui, sans-serif"
               fill="white"

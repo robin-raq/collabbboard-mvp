@@ -1,12 +1,17 @@
-import type { AwarenessState } from '../../../../shared/types'
+interface RemoteUser {
+  userId: string
+  userName: string
+  userColor: string
+  cursor?: { x: number; y: number }
+}
 
 interface PresenceBarProps {
-  remoteUsers: Map<number, AwarenessState>
+  remoteUsers: RemoteUser[]
   connected: boolean
 }
 
 export function PresenceBar({ remoteUsers, connected }: PresenceBarProps) {
-  const users = Array.from(remoteUsers.values())
+  const users = remoteUsers
 
   return (
     <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-1.5 shadow-md border border-gray-200">

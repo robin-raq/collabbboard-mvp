@@ -1,16 +1,14 @@
 import { useCallback, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
-import { useAuth, useUser } from '@clerk/clerk-react'
+import { useUser } from '@clerk/clerk-react'
 import { Board } from '../components/canvas/Board'
 import { ToolPicker } from '../components/toolbar/ToolPicker'
 import { ZoomControls } from '../components/toolbar/ZoomControls'
 import { PresenceBar } from '../components/toolbar/PresenceBar'
 import { CursorLayer } from '../components/cursors/CursorLayer'
 import { ChatPanel } from '../components/chat/ChatPanel'
-import { useYjsBoard } from '../hooks/useYjsBoard'
-import { useAwareness } from '../hooks/useAwareness'
+import { useLiveblocks } from '../hooks/useLiveblocks'
 import { useUiStore } from '../stores/uiStore'
-import * as boardHelpers from '../lib/boardHelpers'
 import type { BoardObject } from '../../../shared/types'
 
 // Assign a random color to each user
@@ -18,18 +16,8 @@ const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899'
 
 export function BoardPage() {
   const { boardId } = useParams<{ boardId: string }>()
-  const { getToken } = useAuth()
   const { user } = useUser()
   const { activeTool, setActiveTool, toggleChat } = useUiStore()
-
-  // Get a session token for WS auth
-  // For now we use a simple approach — in prod this would be a session JWT
-  const token = useMemo(() => {
-    // Clerk getToken returns a promise, so we need a sync fallback for initial render
-    return null as string | null
-  }, [])
-
-  const { doc, objects, connected, undo, redo } = useYjsBoard(boardId, token)
 
   const localUser = useMemo(() => {
     if (!user) return null
@@ -40,53 +28,44 @@ export function BoardPage() {
     }
   }, [user])
 
-  // Awareness is disabled until we have a proper WS provider reference
-  const { remoteUsers, updateCursor } = useAwareness(null, localUser)
+  // Initialize Liveblocks with local user presence
+  const { objects, remoteUsers, createObject, updateObject, deleteObject, setCursor } = useLiveblocks(
+    localUser?.userId ?? 'anonymous'
+  )
 
   const handleObjectUpdate = useCallback(
     (id: string, fields: Partial<BoardObject>) => {
-      if (!doc) return
-      boardHelpers.updateObject(doc, id, fields)
+      updateObject(id, fields)
     },
-    [doc]
+    [updateObject]
   )
 
   const handleObjectCreate = useCallback(
     (x: number, y: number) => {
-      if (!doc || !user || activeTool === 'select') return
-      boardHelpers.createObject(doc, { type: activeTool, x, y }, user.id)
+      if (!user || activeTool === 'select') return
+      createObject({ type: activeTool as BoardObject['type'], x, y }, user.id)
       setActiveTool('select') // Switch back to select after creating
     },
-    [doc, user, activeTool, setActiveTool]
+    [user, activeTool, setActiveTool, createObject]
   )
 
   const handleCursorMove = useCallback(
     (x: number, y: number) => {
-      updateCursor(x, y)
+      setCursor(x, y)
     },
-    [updateCursor]
+    [setCursor]
   )
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       // Delete selected
-      if ((e.key === 'Delete' || e.key === 'Backspace') && doc) {
+      if ((e.key === 'Delete' || e.key === 'Backspace')) {
         const { selectedIds, clearSelection } = useUiStore.getState()
         for (const id of selectedIds) {
-          boardHelpers.deleteObject(doc, id)
+          deleteObject(id)
         }
         clearSelection()
-      }
-
-      // Undo/Redo
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) {
-          redo()
-        } else {
-          undo()
-        }
       }
 
       // Toggle chat
@@ -95,8 +74,11 @@ export function BoardPage() {
         toggleChat()
       }
     },
-    [doc, undo, redo, toggleChat]
+    [deleteObject, toggleChat]
   )
+
+  // Liveblocks connects automatically when provider is configured
+  const connected = true
 
   return (
     <div className="relative h-screen w-screen overflow-hidden" tabIndex={0} onKeyDown={handleKeyDown}>

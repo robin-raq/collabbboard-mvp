@@ -9,8 +9,7 @@ interface BoardTextProps {
 }
 
 export function BoardText({ object, onUpdate }: BoardTextProps) {
-  const { selectedIds, setSelectedIds } = useUiStore()
-  const isSelected = selectedIds.has(object.id)
+  const { setSelectedIds } = useUiStore()
 
   return (
     <Text
