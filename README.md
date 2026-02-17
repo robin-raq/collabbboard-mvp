@@ -1,8 +1,8 @@
 # CollabBoard AI — Full-Stack Collaborative Whiteboard
 
-A real-time collaborative whiteboard with AI agent manipulation, built with React + Vite, Express, Yjs (CRDTs), and Supabase.
+A real-time collaborative whiteboard with AI agent manipulation, built with React 19 + Vite, Express, Liveblocks, and Clerk authentication.
 
-**Status**: MVP in development (Day 1 of 5-day sprint)
+**Status**: MVP complete with user authentication, real-time collaboration, and deployment ready!
 
 ## Quick Start
 
@@ -44,6 +44,16 @@ VITE v7.3.1  ready in 803 ms
 
 Then open **http://localhost:5174** in your browser.
 
+### First Time Setup
+
+**Important**: Clerk authentication is required. Before starting:
+
+1. Set up Clerk authentication (see [SETUP_CLERK.md](./SETUP_CLERK.md))
+2. Add your Clerk keys to `.env.local` files in both `client/` and `server/`
+3. Then start the development servers
+
+Without Clerk configured, the app will show an error on startup.
+
 ### Run Tests
 
 ```bash
@@ -61,11 +71,12 @@ cd server && npm run test:watch
 ## Architecture
 
 ### Tech Stack
-- **Frontend**: React 18 + Vite + TypeScript + Tailwind CSS + Konva.js
-- **Backend**: Express + Node.js + y-websocket
-- **Real-time Sync**: Yjs (CRDTs) — handles multi-user conflict resolution automatically
-- **Database**: Supabase PostgreSQL (optional — can run without it)
-- **Auth**: Clerk (optional — runs with mock auth for local dev)
+- **Frontend**: React 19 + Vite + TypeScript + Tailwind CSS + Konva.js
+- **Backend**: Express + Node.js
+- **Real-time Sync**: Liveblocks — cloud-based real-time synchronization
+- **Authentication**: Clerk — user authentication and session management
+- **Database**: PostgreSQL (optional — can run without it)
+- **Deployment**: Docker + Railway (one-click deployment from GitHub)
 - **AI**: Anthropic Claude (optional — logs to console when not configured)
 
 ### Project Structure
@@ -91,40 +102,65 @@ cd server && npm run test:watch
 └── .cursorrules           # Cursor AI agent rules
 ```
 
-## Development Notes
+## Features
 
-### Without Clerk (Local Dev)
-The server runs with **mock auth** — all requests are accepted as `dev-user`.
+### ✅ Core Features (MVP Complete)
+- **Real-time Collaboration**: Multiple users see each other's changes instantly
+- **User Authentication**: Clerk-based authentication with email and OAuth support
+- **Presence Awareness**: See who's online and where they're pointing their cursor
+- **Sticky Notes**: Create, edit, and delete collaborative sticky notes
+- **Drawing Tools**: Rectangle, circle, line drawing (foundation for future tools)
+- **Pan & Zoom**: Navigate the board with mouse wheel and middle-click drag
+- **Selection**: Click to select objects, Shift+click for multi-select
+- **Deletion**: Select objects and press Delete or Backspace to remove them
 
-To enable real Clerk auth:
-1. Create a Clerk account at https://clerk.com
-2. Set `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY` in `/server/.env.local` and `/client/.env.local`
-3. Restart the servers
+### 🚀 Deployment
+- **Docker**: Multi-stage build for optimized production deployment
+- **Railway**: One-click deployment with automatic git sync
+- **Custom Domains**: HTTPS support with automatic certificate generation
+- See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions
 
-### Without Supabase (Local Dev)
-The server logs a warning but runs fine. Database features are disabled.
+## Setup & Configuration
 
-To enable Supabase:
-1. Create a project at https://supabase.com
-2. Run the schema SQL from `shared/types.ts` (section 6.1 of architecture doc)
-3. Set `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` in `/server/.env.local`
-4. Restart the server
+### Clerk Authentication (Required)
+Clerk authentication is mandatory for all users. See [SETUP_CLERK.md](./SETUP_CLERK.md) for:
+- Creating a Clerk account and application
+- Getting API keys (test and production)
+- Configuring OAuth providers (Google, GitHub, etc.)
+- Setting up production authentication
 
-### Without AI (Local Dev)
-The AI endpoint logs warnings but returns a fallback response.
+### Liveblocks Real-time Sync
+Get your Liveblocks API keys from https://liveblocks.io/dashboard and add to `.env.local`
 
-To enable Anthropic Claude:
-1. Get an API key from https://console.anthropic.com
-2. Set `ANTHROPIC_API_KEY` in `/server/.env.local`
-3. Restart the server
+### Optional Services
+- **Database**: PostgreSQL (for board persistence)
+- **AI**: Anthropic Claude API (for AI chat features)
+- **Email**: SendGrid or similar (for email notifications)
 
-## Roadmap (5-Day Sprint)
+## Roadmap
 
-- [x] Day 1: Monorepo scaffold + auth + Yjs + canvas + WS
-- [ ] Day 2: Board objects (sticky, rect, circle, line, text) + presence
-- [ ] Day 3: Persistence + multi-select + undo/redo
-- [ ] Day 4: AI agent chat panel + tool calls
-- [ ] Day 5: E2E tests + polish + deploy to Railway + Vercel
+### ✅ MVP Complete
+- Monorepo scaffold with shared types
+- Clerk authentication (mandatory)
+- Liveblocks real-time synchronization
+- Canvas with Konva.js rendering
+- Sticky note creation, editing, deletion
+- User presence and cursor tracking
+- Board object creation (sticky notes, shapes)
+- Docker containerization
+- Railway deployment configuration
+
+### 🔄 Future Enhancements
+- [ ] Advanced drawing tools (freehand, shapes)
+- [ ] Undo/redo functionality
+- [ ] Persistent storage (PostgreSQL)
+- [ ] AI chat panel with agent capabilities
+- [ ] Collaborative text editing
+- [ ] Board templates
+- [ ] Export to image/PDF
+- [ ] Comments and annotations
+- [ ] Mobile responsive design
+- [ ] Offline mode with sync
 
 ## Contributing
 
