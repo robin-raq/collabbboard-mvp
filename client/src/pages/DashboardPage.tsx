@@ -26,29 +26,29 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
       {/* Header */}
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <h1 className="text-xl font-bold text-gray-900">CollabBoard AI</h1>
+      <header style={{ borderBottom: '1px solid #e5e7eb', backgroundColor: '#ffffff' }}>
+        <div style={{ maxWidth: '80rem', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.5rem' }}>
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#111827' }}>CollabBoard MVP</h1>
           {clerkKey && <UserButton />}
         </div>
       </header>
 
       {/* Content */}
-      <main className="mx-auto max-w-5xl px-6 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-gray-800">Your Boards</h2>
-          <div className="flex gap-2">
+      <main style={{ maxWidth: '80rem', margin: '0 auto', padding: '2rem 1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2 style={{ fontSize: '1.125rem', fontWeight: '600', color: '#1f2937' }}>Your Boards</h2>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
               onClick={handleCreateBoard}
-              className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+              style={{ padding: '0.5rem 1rem', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}
             >
               + New Board
             </button>
             <button
               onClick={handleShareBoard}
-              className="rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600"
+              style={{ padding: '0.5rem 1rem', backgroundColor: '#22c55e', color: '#ffffff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}
             >
               📋 Share Board
             </button>
@@ -56,32 +56,32 @@ export function DashboardPage() {
         </div>
 
         {boards.length === 0 ? (
-          <div className="rounded-lg border-2 border-dashed border-gray-300 p-12 text-center">
-            <p className="text-gray-500 mb-4">Create a new board or generate a share link to collaborate with others.</p>
-            <div className="flex gap-3 justify-center">
+          <div style={{ border: '2px dashed #d1d5db', borderRadius: '0.5rem', padding: '3rem', textAlign: 'center' }}>
+            <p style={{ color: '#6b7280', marginBottom: '1rem' }}>Create a new board or generate a share link to collaborate with others.</p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
               <button
                 onClick={handleCreateBoard}
-                className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+                style={{ padding: '0.5rem 1rem', backgroundColor: '#3b82f6', color: '#ffffff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}
               >
                 Create Board
               </button>
               <button
                 onClick={handleShareBoard}
-                className="rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600"
+                style={{ padding: '0.5rem 1rem', backgroundColor: '#22c55e', color: '#ffffff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500' }}
               >
                 Share Board
               </button>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '1rem' }}>
             {boards.map((board) => (
               <button
                 key={board.id}
                 onClick={() => navigate(`/board/${board.id}`)}
-                className="rounded-lg border border-gray-200 bg-white p-6 text-left shadow-sm hover:shadow-md transition-shadow"
+                style={{ border: '1px solid #e5e7eb', backgroundColor: '#ffffff', padding: '1.5rem', textAlign: 'left', borderRadius: '0.5rem', cursor: 'pointer' }}
               >
-                <h3 className="font-medium text-gray-800">{board.name}</h3>
+                <h3 style={{ fontWeight: '500', color: '#1f2937' }}>{board.name}</h3>
               </button>
             ))}
           </div>
