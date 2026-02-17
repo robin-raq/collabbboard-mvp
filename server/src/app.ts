@@ -53,10 +53,10 @@ app.post('/api/liveblocks-auth', async (req, res) => {
     const client = new Liveblocks({ secret })
 
     // Generate a session token for the authenticated user
+    // Use userId as display name since we don't have user object in this context
     const session = client.prepareSession(auth.userId, {
       userInfo: {
-        name: auth.user?.fullName || auth.user?.primaryEmailAddress?.emailAddress || 'Anonymous',
-        avatar: auth.user?.imageUrl || undefined,
+        name: auth.userId || 'Anonymous',
       },
     })
 
