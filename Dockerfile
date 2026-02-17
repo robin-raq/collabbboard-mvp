@@ -6,7 +6,9 @@ WORKDIR /app
 
 # Copy package files and config
 COPY client/package*.json ./client/
-COPY client/tsconfig*.json ./client/
+COPY client/tsconfig.json ./client/
+COPY client/tsconfig.app.json ./client/
+COPY client/tsconfig.node.json ./client/
 COPY client/vite.config.ts ./client/
 COPY client/index.html ./client/
 COPY client/src ./client/src
