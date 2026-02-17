@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { clerkAuth } from './middleware/auth.js'
 import boardsRouter from './routes/boards.js'
 import aiRouter from './routes/ai.js'
+import liveblocksAuthRouter from './routes/liveblocksAuth.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -36,6 +37,7 @@ app.get('/api/config', (_req, res) => {
 // API routes
 app.use('/api/boards', boardsRouter)
 app.use('/api/ai', aiRouter)
+app.use('/api/liveblocks-auth', liveblocksAuthRouter)
 
 // Serve static frontend files in production
 const frontendPath = path.join(__dirname, '../../client/dist')
