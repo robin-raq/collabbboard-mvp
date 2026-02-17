@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Group, Rect, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from '../../../../shared/types'
@@ -72,44 +73,51 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
     }
   }
 
+  // Render textarea outside of Konva canvas using portal
   if (isEditing) {
     return (
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          zIndex: 1000,
-        }}
-        onClick={saveEdit}
-      >
-        <textarea
-          autoFocus
-          value={editText}
-          onChange={handleEditChange}
-          onKeyDown={handleKeyDown}
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            width: '400px',
-            height: '300px',
-            padding: '16px',
-            fontSize: '14px',
-            fontFamily: 'system-ui, sans-serif',
-            border: '2px solid #2563EB',
-            borderRadius: '8px',
-            boxSizing: 'border-box',
-            resize: 'none',
-            outline: 'none',
-            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
-          }}
-        />
-      </div>
+      <>
+        {createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(0, 0, 0, 0.3)',
+              zIndex: 1000,
+            }}
+            onClick={saveEdit}
+          >
+            <textarea
+              autoFocus
+              value={editText}
+              onChange={handleEditChange}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Type your note here... (Ctrl+Enter to save, Escape to cancel)"
+              style={{
+                width: '400px',
+                height: '300px',
+                padding: '16px',
+                fontSize: '14px',
+                fontFamily: 'system-ui, sans-serif',
+                border: '2px solid #2563EB',
+                borderRadius: '8px',
+                boxSizing: 'border-box',
+                resize: 'none',
+                outline: 'none',
+                boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+              }}
+            />
+          </div>,
+          document.body
+        )}
+      </>
     )
   }
 
