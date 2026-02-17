@@ -115,22 +115,39 @@ cd server && npm run test:watch
 - **Deletion**: Select objects and press Delete or Backspace to remove them
 
 ### 🚀 Deployment
-- **Docker**: Multi-stage build for optimized production deployment
-- **Railway**: One-click deployment with automatic git sync
+- **Frontend**: Vercel deployment with automatic HTTPS and global CDN
+- **Backend**: Railway for persistent Node.js server
+- **Real-time Sync**: Liveblocks cloud service (automatic scaling)
+- **One-click Setup**: Automatic deployment on git push to main branch
 - **Custom Domains**: HTTPS support with automatic certificate generation
-- See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions
+- See [VERCEL_QUICK_START.md](./VERCEL_QUICK_START.md) for 5-minute setup
+- See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for detailed instructions
+- See [DEPLOYMENT_ARCHITECTURE.md](./DEPLOYMENT_ARCHITECTURE.md) for architecture overview
 
 ## Setup & Configuration
 
-### Clerk Authentication (Required)
+### 🚀 Production Deployment (Vercel)
+
+For the fastest path to production with authenticated users:
+
+1. **Quick Start** (5 minutes): See [VERCEL_QUICK_START.md](./VERCEL_QUICK_START.md)
+2. **Detailed Setup**: See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
+3. **Credential Checklist**: See [ENV_SETUP_CHECKLIST.md](./ENV_SETUP_CHECKLIST.md)
+4. **Pre-Launch Checklist**: See [PRODUCTION_CHECKLIST.md](./PRODUCTION_CHECKLIST.md)
+
+**Architecture**: Frontend on Vercel + Backend on Railway + Liveblocks sync
+
+### 🔐 Clerk Authentication (Required)
 Clerk authentication is mandatory for all users. See [SETUP_CLERK.md](./SETUP_CLERK.md) for:
 - Creating a Clerk account and application
-- Getting API keys (test and production)
+- Getting API keys (test for local, production for Vercel)
 - Configuring OAuth providers (Google, GitHub, etc.)
-- Setting up production authentication
+- Setting up production authentication with custom domains
 
-### Liveblocks Real-time Sync
-Get your Liveblocks API keys from https://liveblocks.io/dashboard and add to `.env.local`
+### 🔄 Liveblocks Real-time Sync
+Get your Liveblocks API keys from https://liveblocks.io/dashboard and add to:
+- `.env.local` for local development
+- Vercel dashboard for production deployment
 
 ### Optional Services
 - **Database**: PostgreSQL (for board persistence)
