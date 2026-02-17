@@ -38,9 +38,11 @@ async function initializeApp() {
         <LiveblocksProvider
           authEndpoint={async (room) => {
             // Request auth token from backend
+            // IMPORTANT: credentials: 'include' sends the Clerk session cookie
             const response = await fetch('/api/liveblocks-auth', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
               body: JSON.stringify({ room }),
             })
 
