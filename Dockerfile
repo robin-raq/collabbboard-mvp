@@ -62,4 +62,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
 WORKDIR /app/server
 
 # Start the server (which will also serve static frontend files)
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/server/src/index.js"]
