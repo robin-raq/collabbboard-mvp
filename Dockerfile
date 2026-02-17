@@ -4,11 +4,6 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Accept build arguments for environment variables
-ARG VITE_CLERK_PUBLISHABLE_KEY
-ARG VITE_LIVEBLOCKS_PUBLIC_KEY
-ARG VITE_API_URL=/api
-
 # Copy client and shared types
 COPY client ./client
 COPY shared ./shared
@@ -17,10 +12,7 @@ COPY shared ./shared
 WORKDIR /app/client
 RUN npm ci
 
-# Build the frontend with environment variables
-ENV VITE_API_URL=${VITE_API_URL}
-ENV VITE_CLERK_PUBLISHABLE_KEY=${VITE_CLERK_PUBLISHABLE_KEY}
-ENV VITE_LIVEBLOCKS_PUBLIC_KEY=${VITE_LIVEBLOCKS_PUBLIC_KEY}
+# Build the frontend (without Clerk/Liveblocks keys - we'll inject at runtime)
 RUN npm run build
 
 # Stage 2: Build backend (Express + TypeScript)
@@ -53,6 +45,27 @@ COPY --from=backend-builder /app/server/dist/server ./server
 COPY --from=backend-builder /app/server/node_modules ./node_modules
 COPY --from=backend-builder /app/server/package*.json ./
 
+# Create a script to inject environment variables into index.html at startup
+RUN cat > /app/inject-env.js << 'EOF'
+const fs = require('fs');
+const path = require('path');
+
+const indexPath = path.join(__dirname, 'client/dist/index.html');
+let html = fs.readFileSync(indexPath, 'utf8');
+
+// Inject environment variables as window globals before the app loads
+const envScript = `
+<script>
+  window.__VITE_CLERK_PUBLISHABLE_KEY = '${process.env.VITE_CLERK_PUBLISHABLE_KEY || ''}';
+  window.__VITE_LIVEBLOCKS_PUBLIC_KEY = '${process.env.VITE_LIVEBLOCKS_PUBLIC_KEY || ''}';
+  window.__VITE_API_URL = '${process.env.VITE_API_URL || '/api'}';
+</script>
+`;
+
+html = html.replace('<head>', '<head>' + envScript);
+fs.writeFileSync(indexPath, html);
+EOF
+
 # Expose port
 EXPOSE 3001
 
@@ -62,4 +75,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
 
 # Set working directory and start
 WORKDIR /app
-CMD ["node", "server/src/index.js"]
+CMD ["sh", "-c", "node inject-env.js && node server/src/index.js"]
