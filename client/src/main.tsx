@@ -7,21 +7,25 @@ import App from './App.tsx'
 
 // Initialize app by fetching configuration from backend
 async function initializeApp() {
+  console.log('[App Init] Starting initialization...')
   try {
     // Fetch configuration from backend API
+    console.log('[App Init] Fetching config from /api/config...')
     const response = await fetch('/api/config')
+    console.log('[App Init] Config response status:', response.status)
     if (!response.ok) {
       throw new Error(`Failed to fetch config: ${response.statusText}`)
     }
     const config = await response.json()
+    console.log('[App Init] Config loaded:', config)
 
     // Get Clerk key from API response or fall back to environment variables
     const clerkPubKey = config.clerkPublishableKey || import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
     // Log for debugging
-    console.log('Clerk Key:', clerkPubKey ? '✓ Set' : '✗ Missing')
-    console.log('Liveblocks Auth:', 'Configured via authEndpoint')
-    console.log('API URL:', config.apiUrl || '/api')
+    console.log('[App Init] Clerk Key:', clerkPubKey ? '✓ Set' : '✗ Missing')
+    console.log('[App Init] Liveblocks Key:', config.liveblocksPublicKey ? '✓ Set' : '✗ Missing')
+    console.log('[App Init] API URL:', config.apiUrl || '/api')
 
     // Clerk is now required for authentication
     if (!clerkPubKey) {
@@ -44,6 +48,7 @@ async function initializeApp() {
     }
 
     // Root provider stack - Clerk is now required
+    console.log('[App Init] Creating root element...')
     const root = (
       <ClerkProvider publishableKey={clerkPubKey}>
         <LiveblocksProvider publicApiKey={liveblocksPublicKey}>
@@ -52,21 +57,26 @@ async function initializeApp() {
       </ClerkProvider>
     )
 
+    console.log('[App Init] Rendering React app...')
     createRoot(document.getElementById('root')!).render(
       <StrictMode>
         {root}
       </StrictMode>,
     )
+    console.log('[App Init] React app rendered successfully!')
   } catch (error) {
-    console.error('Failed to initialize app:', error)
+    console.error('[App Init] FATAL ERROR:', error)
     // Display error to user in DOM
     const rootEl = document.getElementById('root')
     if (rootEl) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      const errorStack = error instanceof Error ? error.stack : ''
       rootEl.innerHTML = `
-        <div style="padding: 20px; font-family: sans-serif; color: #d32f2f;">
-          <h1>Failed to Initialize App</h1>
-          <p>${error instanceof Error ? error.message : String(error)}</p>
-          <p>Please check your server configuration and try again.</p>
+        <div style="padding: 20px; font-family: monospace; color: #d32f2f; background: #fff3e0; border: 1px solid #ff9800; line-height: 1.6;">
+          <h1 style="margin: 0 0 10px 0; color: #e65100;">❌ Initialization Failed</h1>
+          <p style="margin: 5px 0;"><strong>Error:</strong> ${errorMsg}</p>
+          <pre style="margin: 10px 0; font-size: 12px; overflow-x: auto; background: #fff; padding: 10px; border-radius: 4px;">${errorStack}</pre>
+          <p style="margin: 10px 0; font-size: 12px; color: #666;">Check browser console (F12) for more details.</p>
         </div>
       `
     }
