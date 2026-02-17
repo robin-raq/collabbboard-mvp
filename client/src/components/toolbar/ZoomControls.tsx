@@ -16,25 +16,39 @@ export function ZoomControls() {
     setViewport({ x: 0, y: 0, scale: 1 })
   }
 
+  const buttonStyle = {
+    display: 'flex',
+    height: '2rem',
+    width: '2rem',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '0.375rem',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#374151',
+    cursor: 'pointer',
+    fontSize: '1.125rem',
+  }
+
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-white p-1 shadow-md border border-gray-200">
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', borderRadius: '0.5rem', backgroundColor: '#fff', padding: '0.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
       <button
         onClick={zoomOut}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+        style={buttonStyle}
         title="Zoom out"
       >
         −
       </button>
       <button
         onClick={resetView}
-        className="flex h-8 min-w-[3rem] items-center justify-center rounded-md text-xs text-gray-600 hover:bg-gray-100"
+        style={{ ...buttonStyle, width: '3rem', fontSize: '0.75rem', color: '#4b5563' }}
         title="Reset view"
       >
         {percentage}%
       </button>
       <button
         onClick={zoomIn}
-        className="flex h-8 w-8 items-center justify-center rounded-md text-gray-700 hover:bg-gray-100"
+        style={buttonStyle}
         title="Zoom in"
       >
         +

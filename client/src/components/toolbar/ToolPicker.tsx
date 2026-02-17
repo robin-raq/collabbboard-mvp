@@ -13,16 +13,25 @@ export function ToolPicker() {
   const { activeTool, setActiveTool } = useUiStore()
 
   return (
-    <div className="flex gap-1 rounded-lg bg-white p-1 shadow-md border border-gray-200">
+    <div style={{ display: 'flex', gap: '0.25rem', borderRadius: '0.5rem', backgroundColor: '#fff', padding: '0.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
       {tools.map((tool) => (
         <button
           key={tool.id}
           onClick={() => setActiveTool(tool.id)}
-          className={`flex h-9 w-9 items-center justify-center rounded-md text-sm transition-colors ${
-            activeTool === tool.id
-              ? 'bg-blue-500 text-white'
-              : 'text-gray-700 hover:bg-gray-100'
-          }`}
+          style={{
+            display: 'flex',
+            height: '2.25rem',
+            width: '2.25rem',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '0.375rem',
+            fontSize: '0.875rem',
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: activeTool === tool.id ? '#3b82f6' : 'transparent',
+            color: activeTool === tool.id ? '#fff' : '#374151',
+            transition: 'all 0.2s',
+          }}
           title={tool.label}
         >
           {tool.icon}
