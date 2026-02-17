@@ -71,43 +71,40 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
   }
 
   if (isEditing) {
-    const absPos = groupRef.current?.getAbsolutePosition()
-    const stage = groupRef.current?.getStage()
-    const stagePos = stage?.absolutePosition?.() || { x: 0, y: 0 }
-    const stageScale = stage?.scaleX?.() || 1
-
-    const x = (absPos?.x || 0) * stageScale + stagePos.x + window.scrollX
-    const y = (absPos?.y || 0) * stageScale + stagePos.y + window.scrollY
-    const width = (object.width ?? 200) * stageScale
-    const height = (object.height ?? 200) * stageScale
-
     return (
       <div
         style={{
           position: 'fixed',
-          left: x,
-          top: y,
-          width,
-          height,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.3)',
           zIndex: 1000,
         }}
+        onClick={saveEdit}
       >
         <textarea
           autoFocus
           value={editText}
           onChange={handleEditChange}
           onKeyDown={handleKeyDown}
-          onBlur={saveEdit}
+          onClick={(e) => e.stopPropagation()}
           style={{
-            width: '100%',
-            height: '100%',
-            padding: '12px',
-            fontSize: `${14 * stageScale}px`,
+            width: '400px',
+            height: '300px',
+            padding: '16px',
+            fontSize: '14px',
             fontFamily: 'system-ui, sans-serif',
             border: '2px solid #2563EB',
-            borderRadius: '4px',
+            borderRadius: '8px',
             boxSizing: 'border-box',
             resize: 'none',
+            outline: 'none',
+            boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
           }}
         />
       </div>
