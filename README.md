@@ -115,39 +115,42 @@ cd server && npm run test:watch
 - **Deletion**: Select objects and press Delete or Backspace to remove them
 
 ### 🚀 Deployment
-- **Frontend**: Vercel deployment with automatic HTTPS and global CDN
-- **Backend**: Railway for persistent Node.js server
+- **Platform**: Railway with custom domain ($3-5/year)
+- **Authentication**: Clerk production keys (pk_live_) on custom domain
 - **Real-time Sync**: Liveblocks cloud service (automatic scaling)
-- **One-click Setup**: Automatic deployment on git push to main branch
-- **Custom Domains**: HTTPS support with automatic certificate generation
-- See [VERCEL_QUICK_START.md](./VERCEL_QUICK_START.md) for 5-minute setup
-- See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for detailed instructions
+- **HTTPS**: Automatic certificate generation
+- **Auto-Deploy**: Automatic deployment on git push to main branch
+- **See**: [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) for complete setup (RECOMMENDED)
 - See [DEPLOYMENT_ARCHITECTURE.md](./DEPLOYMENT_ARCHITECTURE.md) for architecture overview
 
 ## Setup & Configuration
 
-### 🚀 Production Deployment (Vercel)
+### 🚀 Production Deployment (Railway with Custom Domain)
 
 For the fastest path to production with authenticated users:
 
-1. **Quick Start** (5 minutes): See [VERCEL_QUICK_START.md](./VERCEL_QUICK_START.md)
-2. **Detailed Setup**: See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)
-3. **Credential Checklist**: See [ENV_SETUP_CHECKLIST.md](./ENV_SETUP_CHECKLIST.md)
-4. **Pre-Launch Checklist**: See [PRODUCTION_CHECKLIST.md](./PRODUCTION_CHECKLIST.md)
+1. **Custom Domain Setup**: See [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) (1 hour total)
+   - Buy cheap domain ($3-5/year)
+   - Point to Railway
+   - Get Clerk production keys (pk_live_)
+   - Deploy complete app with full authentication
 
-**Architecture**: Frontend on Vercel + Backend on Railway + Liveblocks sync
+**Architecture**: Everything on Railway + Custom domain + Clerk production auth
 
 ### 🔐 Clerk Authentication (Required)
-Clerk authentication is mandatory for all users. See [SETUP_CLERK.md](./SETUP_CLERK.md) for:
-- Creating a Clerk account and application
-- Getting API keys (test for local, production for Vercel)
-- Configuring OAuth providers (Google, GitHub, etc.)
-- Setting up production authentication with custom domains
+Clerk authentication is mandatory for all users. For production:
+1. Buy custom domain ($3-5/year) - Clerk requirement for `pk_live_` keys
+2. Point domain to Railway
+3. Follow [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) for complete setup
+4. See [SETUP_CLERK.md](./SETUP_CLERK.md) for:
+   - Creating Clerk application
+   - Getting development keys (test locally)
+   - Configuring OAuth providers (Google, GitHub, etc.)
 
 ### 🔄 Liveblocks Real-time Sync
 Get your Liveblocks API keys from https://liveblocks.io/dashboard and add to:
 - `.env.local` for local development
-- Vercel dashboard for production deployment
+- Railway environment variables for production deployment
 
 ### Optional Services
 - **Database**: PostgreSQL (for board persistence)
