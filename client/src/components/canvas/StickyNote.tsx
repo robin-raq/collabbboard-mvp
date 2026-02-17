@@ -71,14 +71,24 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
   }
 
   if (isEditing) {
+    const absPos = groupRef.current?.getAbsolutePosition()
+    const stage = groupRef.current?.getStage()
+    const stagePos = stage?.absolutePosition?.() || { x: 0, y: 0 }
+    const stageScale = stage?.scaleX?.() || 1
+
+    const x = (absPos?.x || 0) * stageScale + stagePos.x + window.scrollX
+    const y = (absPos?.y || 0) * stageScale + stagePos.y + window.scrollY
+    const width = (object.width ?? 200) * stageScale
+    const height = (object.height ?? 200) * stageScale
+
     return (
       <div
         style={{
           position: 'fixed',
-          left: groupRef.current?.getAbsolutePosition().x ?? 0,
-          top: groupRef.current?.getAbsolutePosition().y ?? 0,
-          width: (object.width ?? 200),
-          height: (object.height ?? 200),
+          left: x,
+          top: y,
+          width,
+          height,
           zIndex: 1000,
         }}
       >
@@ -92,7 +102,7 @@ export function StickyNote({ object, onUpdate }: StickyNoteProps) {
             width: '100%',
             height: '100%',
             padding: '12px',
-            fontSize: '14px',
+            fontSize: `${14 * stageScale}px`,
             fontFamily: 'system-ui, sans-serif',
             border: '2px solid #2563EB',
             borderRadius: '4px',
