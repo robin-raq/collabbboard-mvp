@@ -32,7 +32,7 @@ npm install --prefix server
 **Create `client/.env.local`:**
 ```bash
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_YOUR_KEY_HERE
-VITE_LIVEBLOCKS_PUBLIC_KEY=pk_dev_7R5QO1Bj606EdmhLSIFzbV5ER4YYHs1N3eECMmrxk-zrGVqWEdR85yQxcDjEEjy5
+VITE_LIVEBLOCKS_PUBLIC_KEY=pk_dev_YOUR_KEY_HERE
 VITE_API_URL=http://localhost:3001
 ```
 
@@ -40,8 +40,12 @@ VITE_API_URL=http://localhost:3001
 ```bash
 CLERK_SECRET_KEY=sk_test_YOUR_KEY_HERE
 PORT=3001
-VITE_LIVEBLOCKS_PUBLIC_KEY=pk_dev_7R5QO1Bj606EdmhLSIFzbV5ER4YYHs1N3eECMmrxk-zrGVqWEdR85yQxcDjEEjy5
+VITE_LIVEBLOCKS_PUBLIC_KEY=pk_dev_YOUR_KEY_HERE
 ```
+
+**To get your keys:**
+- **Clerk**: https://dashboard.clerk.com → API Keys (get `pk_test_` and `sk_test_`)
+- **Liveblocks**: https://liveblocks.io/dashboard → API Keys (get `pk_dev_`)
 
 ## Step 4: Start Development Servers (1 minute)
 
