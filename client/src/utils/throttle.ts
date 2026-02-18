@@ -9,15 +9,15 @@
  * @param ms   Minimum interval between calls in milliseconds
  * @returns    A throttled version of the function
  */
-export function throttle<T extends (...args: unknown[]) => void>(
+export function throttle<T extends (...args: any[]) => void>(
   fn: T,
   ms: number,
 ): T & { cancel: () => void } {
   let lastCall = 0
   let timer: ReturnType<typeof setTimeout> | null = null
-  let lastArgs: unknown[] | null = null
+  let lastArgs: any[] | null = null
 
-  const throttled = (...args: unknown[]) => {
+  const throttled = (...args: any[]) => {
     const now = Date.now()
     const remaining = ms - (now - lastCall)
     lastArgs = args

@@ -1,10 +1,13 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Stage, Layer, Circle, Text as KonvaText, Line } from 'react-konva'
 import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import StickyNote from './StickyNote'
 import Rectangle from './Rectangle'
 import type { BoardObject } from './types'
+import { cullObjects, type Viewport } from './utils/viewportCulling'
+
+const DEBUG = import.meta.env.DEV
 
 const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
 
@@ -30,6 +33,24 @@ export default function Board({ userName }: BoardProps) {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  // Viewport culling — only render objects that are visible on screen
+  const viewport: Viewport = useMemo(
+    () => ({
+      stageX: stagePos.x,
+      stageY: stagePos.y,
+      scale,
+      width: size.w,
+      height: size.h,
+    }),
+    [stagePos.x, stagePos.y, scale, size.w, size.h],
+  )
+
+  const visibleObjects = useMemo(() => {
+    const culled = cullObjects(objects, viewport)
+    if (DEBUG) console.log(`[CULL] ${culled.length}/${objects.length} objects visible`)
+    return culled
+  }, [objects, viewport])
+
   // Zoom with scroll wheel
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -51,7 +72,7 @@ export default function Board({ userName }: BoardProps) {
         y: (pointer.y - stagePos.y) / oldScale,
       }
 
-      console.log('[CANVAS] Zoom:', newScale.toFixed(2))
+      if (DEBUG) console.log('[CANVAS] Zoom:', newScale.toFixed(2))
       setScale(newScale)
       setStagePos({
         x: pointer.x - mousePointTo.x * newScale,
@@ -65,7 +86,7 @@ export default function Board({ userName }: BoardProps) {
   const handleDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (e.target === e.target.getStage()) {
       const pos = { x: e.target.x(), y: e.target.y() }
-      console.log('[CANVAS] Panned to:', pos)
+      if (DEBUG) console.log('[CANVAS] Panned to:', pos)
       setStagePos(pos)
     }
   }, [])
@@ -98,7 +119,7 @@ export default function Board({ userName }: BoardProps) {
       text: 'New note',
       fill: '#FFEB3B',
     }
-    console.log('[CREATE]', obj)
+    if (DEBUG) console.log('[CREATE]', obj)
     createObject(obj)
   }, [createObject, stagePos, scale, size])
 
@@ -113,7 +134,7 @@ export default function Board({ userName }: BoardProps) {
       height: 100,
       fill: '#3B82F6',
     }
-    console.log('[CREATE]', obj)
+    if (DEBUG) console.log('[CREATE]', obj)
     createObject(obj)
   }, [createObject, stagePos, scale, size])
 
@@ -138,10 +159,10 @@ export default function Board({ userName }: BoardProps) {
         }}
       >
         <button onClick={createSticky} style={btnStyle} title="Add Sticky Note">
-          📋 Sticky
+          Sticky
         </button>
         <button onClick={createRect} style={btnStyle} title="Add Rectangle">
-          ◻ Rect
+          Rect
         </button>
         <div style={{ width: 1, height: 24, background: '#e5e7eb' }} />
         <span style={{ fontSize: 12, color: '#6b7280' }}>
@@ -200,11 +221,18 @@ export default function Board({ userName }: BoardProps) {
         onDragEnd={handleDragEnd}
         onMouseMove={handleMouseMove}
       >
-        {/* Objects layer */}
+        {/* Objects layer — only visible objects are rendered (viewport culling) */}
         <Layer>
-          {objects.map((obj) =>
+          {visibleObjects.map((obj) =>
             obj.type === 'sticky' ? (
-              <StickyNote key={obj.id} obj={obj} onUpdate={updateObject} />
+              <StickyNote
+                key={obj.id}
+                obj={obj}
+                onUpdate={updateObject}
+                stageRef={stageRef}
+                scale={scale}
+                stagePos={stagePos}
+              />
             ) : (
               <Rectangle key={obj.id} obj={obj} onUpdate={updateObject} />
             )
