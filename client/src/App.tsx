@@ -1,7 +1,13 @@
+import { useState } from 'react'
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useUser } from '@clerk/clerk-react'
 import Board from './Board'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+
+const GUEST_NAMES = [
+  'Curious Panda', 'Swift Falcon', 'Bright Otter', 'Bold Tiger',
+  'Calm Dolphin', 'Quick Fox', 'Wise Owl', 'Happy Koala',
+]
 
 function AuthenticatedBoard() {
   const { user } = useUser()
@@ -14,14 +20,23 @@ function AuthenticatedBoard() {
   return <Board userName={name} />
 }
 
+function GuestBoard() {
+  const [guestName] = useState(
+    () => GUEST_NAMES[Math.floor(Math.random() * GUEST_NAMES.length)]
+  )
+  console.log('[AUTH] Joined as guest:', guestName)
+  return <Board userName={guestName} />
+}
+
 export default function App() {
+  const [isGuest, setIsGuest] = useState(false)
+
+  if (isGuest) {
+    return <GuestBoard />
+  }
+
   if (!CLERK_KEY) {
-    return (
-      <div style={{ padding: 40, fontFamily: 'system-ui', color: '#d32f2f' }}>
-        <h1>Missing VITE_CLERK_PUBLISHABLE_KEY</h1>
-        <p>Add it to <code>client/.env.local</code></p>
-      </div>
-    )
+    return <GuestBoard />
   }
 
   return (
@@ -30,13 +45,30 @@ export default function App() {
         <div
           style={{
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             height: '100vh',
             background: '#f8fafc',
+            gap: 16,
           }}
         >
           <SignIn routing="hash" />
+          <button
+            onClick={() => setIsGuest(true)}
+            style={{
+              background: 'none',
+              border: '1px solid #d1d5db',
+              borderRadius: 8,
+              padding: '10px 24px',
+              fontSize: 14,
+              color: '#6b7280',
+              cursor: 'pointer',
+              fontFamily: 'system-ui, sans-serif',
+            }}
+          >
+            Continue as Guest
+          </button>
         </div>
       </SignedOut>
       <SignedIn>
