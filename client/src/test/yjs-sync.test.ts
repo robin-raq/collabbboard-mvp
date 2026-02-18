@@ -156,7 +156,7 @@ describe('echo prevention via origin tagging', () => {
     const { doc, map } = createDoc()
     const handler = vi.fn()
 
-    doc.on('update', (update: Uint8Array, origin: unknown) => {
+    doc.on('update', (_update: Uint8Array, origin: unknown) => {
       handler(origin)
     })
 
