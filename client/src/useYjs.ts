@@ -162,15 +162,32 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     connect()
 
     // Observe Y.Map changes — only update the keys that changed (Map-based)
+    // IMPORTANT: Read event.changes.keys eagerly (synchronously) because
+    // Yjs invalidates event data after the observer returns. React's
+    // setObjectMap callback may fire asynchronously, so we must capture
+    // the changes before passing them into the state updater.
     const observer = (event: Y.YMapEvent<BoardObject>) => {
+      const changes: Array<[string, { action: 'add' | 'update' | 'delete' }]> = []
+      for (const [key, change] of event.changes.keys) {
+        changes.push([key, { action: change.action as 'add' | 'update' | 'delete' }])
+      }
+
+      // Snapshot current values for added/updated keys (also must be read synchronously)
+      const snapshots = new Map<string, BoardObject>()
+      for (const [key, change] of changes) {
+        if (change.action !== 'delete') {
+          const val = yMap.get(key)
+          if (val) snapshots.set(key, val)
+        }
+      }
+
       setObjectMap((prev) => {
         const next = new Map(prev)
-        for (const [key, change] of event.changes.keys) {
+        for (const [key, change] of changes) {
           if (change.action === 'delete') {
             next.delete(key)
           } else {
-            // 'add' or 'update' — set the new value
-            const val = yMap.get(key)
+            const val = snapshots.get(key)
             if (val) next.set(key, val)
           }
         }
