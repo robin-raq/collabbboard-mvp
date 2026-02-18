@@ -1,196 +1,162 @@
-# CollabBoard AI — Full-Stack Collaborative Whiteboard
+# CollabBoard MVP
 
-A real-time collaborative whiteboard with AI agent manipulation, built with React 19 + Vite, Express, Liveblocks, and Clerk authentication.
+A real-time collaborative whiteboard built in under 4 hours. Multiple users share an infinite canvas where they can create, move, and edit sticky notes and shapes — all synced instantly via Yjs CRDTs over WebSockets.
 
-**Status**: MVP complete with user authentication, real-time collaboration, and deployment ready!
+**Live:** [collabboard.raqdrobinson.com](https://collabboard.raqdrobinson.com)
+
+## Features
+
+- **Infinite canvas** — pan (drag) and zoom (scroll wheel) with no boundaries
+- **Sticky notes** — create, drag, and double-click to edit text
+- **Rectangles** — drag-and-drop shape primitives
+- **Real-time sync** — every mutation syncs instantly to all connected clients
+- **Multiplayer cursors** — see other users' cursor positions with name labels
+- **Presence awareness** — live count of who's online
+- **Authentication** — Clerk sign-in with Google/email, or guest access
+- **Console-driven TDD** — every mutation logs to the browser console for instant feedback
+
+## Architecture
+
+```
+┌─────────────────────┐         WebSocket (wss://)         ┌──────────────────┐
+│   React + Konva.js  │ ◄──────────────────────────────► │  Node.js + ws    │
+│   (Vercel)          │    Yjs binary updates + awareness  │  (Railway)       │
+│                     │                                     │                  │
+│  Y.Doc ◄─► Y.Map   │                                     │  Y.Doc per room  │
+│  useYjs.ts hook     │                                     │  ~90 lines       │
+│  Clerk auth         │                                     │  No database     │
+└─────────────────────┘                                     └──────────────────┘
+```
+
+| Layer      | Technology                  | Why                              |
+|------------|-----------------------------|----------------------------------|
+| Frontend   | React 19 + Vite + TypeScript| Fast dev, type safety            |
+| Canvas     | Konva.js + react-konva      | Pan/zoom/drag built-in           |
+| Real-time  | Yjs + custom WebSocket      | CRDT = no merge conflicts        |
+| Auth       | Clerk                       | 15-min setup, Google OAuth free  |
+| Backend    | Node.js + ws               | ~90 lines, just a WS relay       |
+| Database   | None (in-memory Yjs)        | MVP speed; persistence = Week 2  |
+| Deployment | Vercel + Railway            | Free tier, zero cost             |
+
+## Project Structure
+
+```
+collabboard-mvp/
+├── client/                     # Vite React app (deployed to Vercel)
+│   ├── src/
+│   │   ├── App.tsx             # Auth wrapper (Clerk + guest mode)
+│   │   ├── Board.tsx           # Main canvas — toolbar, presence, zoom
+│   │   ├── StickyNote.tsx      # Draggable sticky with text editing
+│   │   ├── Rectangle.tsx       # Draggable rectangle shape
+│   │   ├── useYjs.ts           # Yjs sync hook (WebSocket + CRDT)
+│   │   ├── types.ts            # BoardObject type definition
+│   │   ├── main.tsx            # React entry point
+│   │   └── index.css           # Global styles
+│   ├── .env.example            # Environment variable template
+│   └── package.json
+│
+├── server/                     # WebSocket relay (deployed to Railway)
+│   ├── src/
+│   │   └── index.ts            # ~90 lines — rooms, broadcast, health check
+│   ├── .env.example
+│   └── package.json
+│
+├── Dockerfile                  # Server container for Railway
+├── railway.json                # Railway deployment config
+├── vercel.json                 # Vercel deployment config
+└── .cursorrules                # AI code conventions
+```
+
+**Total source code: ~8 files, ~1,000 lines.**
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- npm 11+
 
-### Installation
+- Node.js 20+
+- A [Clerk](https://clerk.com) account (free tier)
+
+### 1. Clone and install
 
 ```bash
-# Install all dependencies
+git clone https://github.com/robin-raq/collabbboard-mvp.git
+cd collabbboard-mvp
+
 npm install --prefix client
 npm install --prefix server
 ```
 
-### Run Locally
-
-**Terminal 1 — Start the backend (HTTP API + WebSocket server):**
-```bash
-cd server
-npm run dev
-```
-Expected output:
-```
-HTTP API server running on port 3001
-WebSocket server running on port 1234
-```
-
-**Terminal 2 — Start the frontend (Vite dev server):**
-```bash
-cd client
-npm run dev
-```
-Expected output:
-```
-VITE v7.3.1  ready in 803 ms
-  ➜  Local:   http://localhost:5174/
-```
-
-Then open **http://localhost:5174** in your browser.
-
-### First Time Setup
-
-**Important**: Clerk authentication is required. Before starting:
-
-1. Set up Clerk authentication (see [SETUP_CLERK.md](./SETUP_CLERK.md))
-2. Add your Clerk keys to `.env.local` files in both `client/` and `server/`
-3. Then start the development servers
-
-Without Clerk configured, the app will show an error on startup.
-
-### Run Tests
+### 2. Configure environment
 
 ```bash
-# Client tests
-cd client && npm test
+# Client
+cp client/.env.example client/.env.local
+# Edit client/.env.local — add your Clerk publishable key
 
-# Server tests
-cd server && npm test
-
-# Watch mode
-cd client && npm run test:watch
-cd server && npm run test:watch
+# Server (optional — defaults work for local dev)
+cp server/.env.example server/.env
 ```
 
-## Architecture
+### 3. Run locally
 
-### Tech Stack
-- **Frontend**: React 19 + Vite + TypeScript + Tailwind CSS + Konva.js
-- **Backend**: Express + Node.js
-- **Real-time Sync**: Liveblocks — cloud-based real-time synchronization
-- **Authentication**: Clerk — user authentication and session management
-- **Database**: PostgreSQL (optional — can run without it)
-- **Deployment**: Docker + Railway (one-click deployment from GitHub)
-- **AI**: Anthropic Claude (optional — logs to console when not configured)
-
-### Project Structure
-```
-.
-├── client/                # React frontend (Vite + Tailwind)
-│   ├── src/
-│   │   ├── components/    # canvas, toolbar, chat, auth
-│   │   ├── hooks/         # useYjsBoard, useAwareness, useAgentChat
-│   │   ├── lib/           # yjs, api, boardHelpers
-│   │   ├── pages/         # BoardPage, Dashboard, Login
-│   │   └── stores/        # Zustand (uiStore)
-│   └── vitest.config.ts
-├── server/                # Express backend
-│   ├── src/
-│   │   ├── routes/        # /api/boards, /api/ai
-│   │   ├── services/      # boardService, agentService, yjsService
-│   │   ├── middleware/    # auth, rateLimit
-│   │   ├── ws/            # WebSocket server (y-websocket compatible)
-│   │   └── lib/           # supabase, yjsRoom registry
-│   └── vitest.config.ts
-├── shared/                # Shared TypeScript types
-└── .cursorrules           # Cursor AI agent rules
+**Terminal 1 — WebSocket server:**
+```bash
+cd server && npm run dev
+# [WS] y-websocket server running on :1234
 ```
 
-## Features
+**Terminal 2 — Frontend:**
+```bash
+cd client && npm run dev
+# VITE ready at http://localhost:5174
+```
 
-### ✅ Core Features (MVP Complete)
-- **Real-time Collaboration**: Multiple users see each other's changes instantly
-- **User Authentication**: Clerk-based authentication with email and OAuth support
-- **Presence Awareness**: See who's online and where they're pointing their cursor
-- **Sticky Notes**: Create, edit, and delete collaborative sticky notes
-- **Drawing Tools**: Rectangle, circle, line drawing (foundation for future tools)
-- **Pan & Zoom**: Navigate the board with mouse wheel and middle-click drag
-- **Selection**: Click to select objects, Shift+click for multi-select
-- **Deletion**: Select objects and press Delete or Backspace to remove them
+Open http://localhost:5174 in two browser tabs to test real-time sync.
 
-### 🚀 Deployment
-- **Platform**: Railway with custom domain ($3-5/year)
-- **Authentication**: Clerk production keys (pk_live_) on custom domain
-- **Real-time Sync**: Liveblocks cloud service (automatic scaling)
-- **HTTPS**: Automatic certificate generation
-- **Auto-Deploy**: Automatic deployment on git push to main branch
-- **See**: [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) for complete setup (RECOMMENDED)
-- See [DEPLOYMENT_ARCHITECTURE.md](./DEPLOYMENT_ARCHITECTURE.md) for architecture overview
+## Console-Driven Testing
 
-## Setup & Configuration
+Every mutation logs to the browser console. Open DevTools (F12) and watch:
 
-### 🚀 Production Deployment (Railway with Custom Domain)
+```
+[YJS] Connected to wss://raqdrobinson.com/mvp-board-1
+[YJS STATUS] connected
+[YJS CREATE] f4a8... sticky {x: 100, y: 100}
+[YJS OBSERVE] Changes received: 1
+  f4a8...: add {id: 'f4a8...', type: 'sticky', ...}
+[YJS UPDATE] f4a8... BEFORE: {x:100} AFTER: {x:250}
+[AWARENESS] Remote users: 1
+```
 
-For the fastest path to production with authenticated users:
+**Test by opening two browser tabs** — create a sticky in one, watch it appear in the other.
 
-1. **Custom Domain Setup**: See [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) (1 hour total)
-   - Buy cheap domain ($3-5/year)
-   - Point to Railway
-   - Get Clerk production keys (pk_live_)
-   - Deploy complete app with full authentication
+## Deployment
 
-**Architecture**: Everything on Railway + Custom domain + Clerk production auth
+### WebSocket Server (Railway)
 
-### 🔐 Clerk Authentication (Required)
-Clerk authentication is mandatory for all users. For production:
-1. Buy custom domain ($3-5/year) - Clerk requirement for `pk_live_` keys
-2. Point domain to Railway
-3. Follow [RAILWAY_CUSTOM_DOMAIN.md](./RAILWAY_CUSTOM_DOMAIN.md) for complete setup
-4. See [SETUP_CLERK.md](./SETUP_CLERK.md) for:
-   - Creating Clerk application
-   - Getting development keys (test locally)
-   - Configuring OAuth providers (Google, GitHub, etc.)
+The server deploys via the `Dockerfile` at the repo root:
 
-### 🔄 Liveblocks Real-time Sync
-Get your Liveblocks API keys from https://liveblocks.io/dashboard and add to:
-- `.env.local` for local development
-- Railway environment variables for production deployment
+1. Connect GitHub repo in [Railway dashboard](https://railway.app)
+2. Set `PORT=1234` in environment variables
+3. Railway auto-deploys on push to main
 
-### Optional Services
-- **Database**: PostgreSQL (for board persistence)
-- **AI**: Anthropic Claude API (for AI chat features)
-- **Email**: SendGrid or similar (for email notifications)
+### Frontend (Vercel)
 
-## Roadmap
+1. Import repo in [Vercel dashboard](https://vercel.com)
+2. Set environment variables:
+   - `VITE_CLERK_PUBLISHABLE_KEY` — your Clerk key
+   - `VITE_WS_URL` — `wss://your-railway-domain.com`
+3. Add custom domain in Settings → Domains
 
-### ✅ MVP Complete
-- Monorepo scaffold with shared types
-- Clerk authentication (mandatory)
-- Liveblocks real-time synchronization
-- Canvas with Konva.js rendering
-- Sticky note creation, editing, deletion
-- User presence and cursor tracking
-- Board object creation (sticky notes, shapes)
-- Docker containerization
-- Railway deployment configuration
+**Cost: $0/month** (both services on free tier).
 
-### 🔄 Future Enhancements
-- [ ] Advanced drawing tools (freehand, shapes)
-- [ ] Undo/redo functionality
-- [ ] Persistent storage (PostgreSQL)
-- [ ] AI chat panel with agent capabilities
-- [ ] Collaborative text editing
-- [ ] Board templates
-- [ ] Export to image/PDF
-- [ ] Comments and annotations
-- [ ] Mobile responsive design
-- [ ] Offline mode with sync
+## What's Next (Post-MVP)
 
-## Contributing
-
-All code follows TDD (Test-Driven Development):
-1. Write a failing test
-2. Use Cursor Ultra to implement the feature
-3. Ensure tests pass
-4. Commit with small, focused PRs
-
-See `.cursorrules` for code conventions.
+- [ ] Database persistence (Supabase)
+- [ ] Delete objects
+- [ ] Undo/redo
+- [ ] Color picker
+- [ ] AI chat agent
+- [ ] Mobile touch support
 
 ## License
 

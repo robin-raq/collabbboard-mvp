@@ -1,16 +1,43 @@
+/**
+ * CollabBoard WebSocket Server
+ *
+ * A minimal Yjs document relay with room isolation.
+ * No database — documents live in memory and are lost on restart.
+ *
+ * Responsibilities:
+ *  - Accept WebSocket connections on /<room-name>
+ *  - Maintain an in-memory Y.Doc per room
+ *  - Send the full document state to new clients on connect
+ *  - Apply incoming Yjs updates to the server-side doc
+ *  - Broadcast all messages (Yjs updates + awareness) to other clients in the room
+ *
+ * Wire protocol (same as client):
+ *   byte[0]  = 0 (Yjs update) | 1 (awareness)
+ *   byte[1:] = payload
+ */
+
 import http from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import * as Y from 'yjs'
 
-const PORT = parseInt(process.env.PORT ?? '1234', 10)
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
-// Message types: 0 = yjs update, 1 = awareness
+const PORT = parseInt(process.env.PORT ?? '1234', 10)
 const MSG_YJS = 0
 
-// In-memory YDoc per room
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+/** In-memory Y.Doc per room. Lost on server restart (persistence = Week 2). */
 const docs = new Map<string, Y.Doc>()
 
-function getDoc(room: string): Y.Doc {
+/** Maps each socket to its room name for targeted broadcasting. */
+const socketRooms = new Map<WebSocket, string>()
+
+function getOrCreateDoc(room: string): Y.Doc {
   if (!docs.has(room)) {
     console.log(`[WS] Creating new YDoc for room: ${room}`)
     docs.set(room, new Y.Doc())
@@ -18,31 +45,37 @@ function getDoc(room: string): Y.Doc {
   return docs.get(room)!
 }
 
-// Track which sockets belong to which rooms
-const socketRooms = new Map<WebSocket, string>()
+// ---------------------------------------------------------------------------
+// HTTP server (health check only)
+// ---------------------------------------------------------------------------
 
-const server = http.createServer((_req, res) => {
+const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
-  if (_req.url === '/health') {
+
+  if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ status: 'ok' }))
     return
   }
+
   res.writeHead(200)
-  res.end('y-websocket server')
+  res.end('CollabBoard y-websocket server')
 })
+
+// ---------------------------------------------------------------------------
+// WebSocket server
+// ---------------------------------------------------------------------------
 
 const wss = new WebSocketServer({ server })
 
 wss.on('connection', (ws, req) => {
-  // Room name from URL path: /<roomname>
   const room = req.url?.slice(1) || 'default'
   console.log(`[WS] New connection to room: ${room}`)
 
-  const doc = getDoc(room)
+  const doc = getOrCreateDoc(room)
   socketRooms.set(ws, room)
 
-  // Send current document state to the new client (prefixed with MSG_YJS)
+  // Send current document state to the new client
   const state = Y.encodeStateAsUpdate(doc)
   const initMsg = new Uint8Array(1 + state.length)
   initMsg[0] = MSG_YJS
@@ -58,22 +91,18 @@ wss.on('connection', (ws, req) => {
       const msgType = data[0]
       const payload = data.slice(1)
 
+      // Apply Yjs updates to the server-side doc (keeps state for new clients)
       if (msgType === MSG_YJS) {
-        // Apply Yjs update to server doc
         Y.applyUpdate(doc, payload, 'remote')
         console.log(`[WS] Applied Yjs update (${payload.byteLength} bytes)`)
       }
 
-      // Broadcast entire message (yjs or awareness) to other clients in room
-      wss.clients.forEach((client) => {
-        if (
-          client !== ws &&
-          client.readyState === WebSocket.OPEN &&
-          socketRooms.get(client) === room
-        ) {
+      // Broadcast to all other clients in the same room
+      for (const client of wss.clients) {
+        if (client !== ws && client.readyState === WebSocket.OPEN && socketRooms.get(client) === room) {
           client.send(data)
         }
-      })
+      }
     } catch (err) {
       console.error('[WS] Error processing message:', err)
     }
@@ -84,6 +113,10 @@ wss.on('connection', (ws, req) => {
     socketRooms.delete(ws)
   })
 })
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
 
 server.listen(PORT, () => {
   console.log(`[WS] y-websocket server running on :${PORT}`)
