@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { Group, Rect, Text } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
@@ -6,9 +6,24 @@ import type { BoardObject } from './types'
 interface Props {
   obj: BoardObject
   onUpdate: (id: string, updates: Partial<BoardObject>) => void
+  stageRef: React.RefObject<Konva.Stage | null>
+  scale: number
+  stagePos: { x: number; y: number }
 }
 
-export default function StickyNote({ obj, onUpdate }: Props) {
+/**
+ * StickyNote — draggable sticky with inline text editing.
+ *
+ * Double-click to edit: a textarea appears directly on top of the sticky
+ * matching its position, size, font, and background color. This gives the
+ * illusion of typing directly on the note.
+ *
+ * - Enter = save
+ * - Shift+Enter = newline
+ * - Esc = cancel
+ * - Click outside = save
+ */
+const StickyNote = memo(function StickyNote({ obj, onUpdate, stageRef, scale, stagePos }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(obj.text ?? '')
 
@@ -18,32 +33,64 @@ export default function StickyNote({ obj, onUpdate }: Props) {
 
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const pos = { x: e.target.x(), y: e.target.y() }
-    console.log('[DRAG STICKY]', obj.id, pos)
     onUpdate(obj.id, pos)
   }
 
   const handleDblClick = () => {
-    console.log('[EDIT START]', obj.id)
     setIsEditing(true)
   }
 
-  // Textarea overlay for editing
+  // Inline textarea overlay — positioned directly on top of the sticky
   useEffect(() => {
     if (!isEditing) return
+    const stage = stageRef.current
+    if (!stage) return
 
-    const container = document.createElement('div')
-    container.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);z-index:1000'
+    // Calculate screen position of the sticky note
+    const screenX = obj.x * scale + stagePos.x
+    const screenY = obj.y * scale + stagePos.y
+    const screenW = obj.width * scale
+    const screenH = obj.height * scale
+
+    // Get stage container position on screen
+    const container = stage.container()
+    const rect = container.getBoundingClientRect()
 
     const textarea = document.createElement('textarea')
     textarea.value = editText
-    textarea.placeholder = 'Type here... (Ctrl+Enter to save, Esc to cancel)'
-    textarea.style.cssText = 'width:300px;height:200px;padding:16px;font-size:14px;font-family:system-ui;border:2px solid #2563EB;border-radius:8px;resize:none;outline:none;box-shadow:0 10px 40px rgba(0,0,0,0.3)'
+    textarea.style.cssText = [
+      `position: fixed`,
+      `left: ${rect.left + screenX}px`,
+      `top: ${rect.top + screenY}px`,
+      `width: ${screenW}px`,
+      `height: ${screenH}px`,
+      `padding: ${10 * scale}px`,
+      `font-size: ${14 * scale}px`,
+      `font-family: system-ui, sans-serif`,
+      `color: #1E293B`,
+      `background: ${obj.fill}`,
+      `border: 2px solid #2563EB`,
+      `border-radius: ${4 * scale}px`,
+      `resize: none`,
+      `outline: none`,
+      `box-sizing: border-box`,
+      `z-index: 1000`,
+      `line-height: 1.4`,
+      `overflow: hidden`,
+    ].join(';')
 
     let currentText = editText
 
     const save = () => {
-      console.log('[EDIT SAVE]', obj.id, currentText)
       onUpdate(obj.id, { text: currentText })
+      cleanup()
+    }
+
+    const cancel = () => {
+      cleanup()
+    }
+
+    const cleanup = () => {
       setIsEditing(false)
     }
 
@@ -53,20 +100,27 @@ export default function StickyNote({ obj, onUpdate }: Props) {
     })
 
     textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.ctrlKey) save()
-      else if (e.key === 'Escape') setIsEditing(false)
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        save()
+      } else if (e.key === 'Escape') {
+        cancel()
+      }
     })
 
-    container.addEventListener('click', (e) => {
-      if (e.target === container) save()
+    textarea.addEventListener('blur', () => {
+      save()
     })
 
-    container.appendChild(textarea)
-    document.body.appendChild(container)
+    document.body.appendChild(textarea)
     textarea.focus()
+    // Move cursor to end of text
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length)
 
     return () => {
-      document.body.removeChild(container)
+      if (document.body.contains(textarea)) {
+        document.body.removeChild(textarea)
+      }
     }
   }, [isEditing]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -96,7 +150,10 @@ export default function StickyNote({ obj, onUpdate }: Props) {
         fontFamily="system-ui, sans-serif"
         fill="#1E293B"
         wrap="word"
+        listening={false}
       />
     </Group>
   )
-}
+})
+
+export default StickyNote

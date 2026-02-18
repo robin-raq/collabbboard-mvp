@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Rect } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
@@ -7,10 +8,9 @@ interface Props {
   onUpdate: (id: string, updates: Partial<BoardObject>) => void
 }
 
-export default function Rectangle({ obj, onUpdate }: Props) {
+const Rectangle = memo(function Rectangle({ obj, onUpdate }: Props) {
   const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
     const pos = { x: e.target.x(), y: e.target.y() }
-    console.log('[DRAG RECT]', obj.id, pos)
     onUpdate(obj.id, pos)
   }
 
@@ -27,4 +27,6 @@ export default function Rectangle({ obj, onUpdate }: Props) {
       onDragEnd={handleDragEnd}
     />
   )
-}
+})
+
+export default Rectangle

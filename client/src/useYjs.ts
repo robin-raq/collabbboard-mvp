@@ -8,6 +8,12 @@
  *  4. Exposes CRUD operations that mutate the Y.Map (auto-synced)
  *  5. Tracks remote cursors via the awareness protocol
  *
+ * Performance optimizations:
+ *  - Cursor updates throttled to 50ms (20 updates/sec) — target: <50ms latency
+ *  - Map-based object state — only changed objects trigger re-renders
+ *  - Remote cursor updates batched via requestAnimationFrame
+ *  - Console logs gated behind import.meta.env.DEV
+ *
  * Wire protocol (binary):
  *   byte[0]  = message type (0 = Yjs update, 1 = awareness)
  *   byte[1:] = payload (Yjs binary update OR UTF-8 JSON)
@@ -16,9 +22,10 @@
  * the update handler doesn't echo them back to the server.
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import type { BoardObject } from './types'
+import { throttle } from './utils/throttle'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,6 +35,8 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:1234'
 const MSG_YJS = 0       // Yjs document update
 const MSG_AWARENESS = 1 // Cursor / presence info
 const REMOTE = 'remote' // Origin tag to prevent echo loops
+const DEBUG = import.meta.env.DEV // Gate all logs behind dev mode
+const CURSOR_THROTTLE_MS = 50 // Throttle cursor sends to 20/sec
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,7 +54,8 @@ export interface RemoteCursor {
 // ---------------------------------------------------------------------------
 
 export function useYjs(roomId: string, userName: string, userColor: string) {
-  const [objects, setObjects] = useState<BoardObject[]>([])
+  // Map-based state: only changed objects cause re-renders when used with React.memo
+  const [objectMap, setObjectMap] = useState<Map<string, BoardObject>>(new Map())
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([])
   const [connected, setConnected] = useState(false)
 
@@ -54,6 +64,28 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(crypto.randomUUID())
   const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map())
+
+  // Batch remote cursor updates via requestAnimationFrame
+  const cursorRafRef = useRef<number | null>(null)
+  const cursorDirtyRef = useRef(false)
+
+  function flushCursors() {
+    if (cursorDirtyRef.current) {
+      cursorDirtyRef.current = false
+      setRemoteCursors(Array.from(remoteCursorsRef.current.values()))
+    }
+    cursorRafRef.current = null
+  }
+
+  function scheduleCursorFlush() {
+    cursorDirtyRef.current = true
+    if (!cursorRafRef.current) {
+      cursorRafRef.current = requestAnimationFrame(flushCursors)
+    }
+  }
+
+  // Derive objects array from Map (stable references for unchanged objects)
+  const objects = useMemo(() => Array.from(objectMap.values()), [objectMap])
 
   // ---- WebSocket + Yjs sync lifecycle ------------------------------------
 
@@ -64,7 +96,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     yMapRef.current = yMap
 
     const wsUrl = `${WS_URL}/${roomId}`
-    console.log('[YJS] Connecting to', wsUrl)
+    if (DEBUG) console.log('[YJS] Connecting to', wsUrl)
 
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout>
@@ -75,19 +107,18 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       wsRef.current = ws
 
       ws.onopen = () => {
-        console.log('[YJS STATUS] connected')
+        if (DEBUG) console.log('[YJS STATUS] connected')
         setConnected(true)
         sendAwareness(ws, clientIdRef.current, userName, userColor, null)
 
         // Send our current state to the server so it can merge
-        // (handles case where client had offline edits or stale state)
         const localState = Y.encodeStateAsUpdate(yDoc)
-        if (localState.length > 2) { // Skip if empty doc
+        if (localState.length > 2) {
           const msg = new Uint8Array(1 + localState.length)
           msg[0] = MSG_YJS
           msg.set(localState, 1)
           ws.send(msg)
-          console.log(`[YJS] Sent local state to server (${localState.byteLength} bytes)`)
+          if (DEBUG) console.log(`[YJS] Sent local state to server (${localState.byteLength} bytes)`)
         }
       }
 
@@ -101,47 +132,64 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
         if (msgType === MSG_YJS) {
           // CRITICAL: Tag with 'remote' origin so updateHandler won't echo it back
           Y.applyUpdate(yDoc, payload, REMOTE)
-          console.log(`[YJS] Applied remote update (${payload.byteLength} bytes)`)
+          if (DEBUG) console.log(`[YJS] Applied remote update (${payload.byteLength} bytes)`)
         } else if (msgType === MSG_AWARENESS) {
           try {
             const info = JSON.parse(new TextDecoder().decode(payload)) as RemoteCursor
             if (info.clientId !== clientIdRef.current) {
               remoteCursorsRef.current.set(info.clientId, info)
-              setRemoteCursors(Array.from(remoteCursorsRef.current.values()))
-              console.log('[AWARENESS] Remote users:', remoteCursorsRef.current.size)
+              // Batch cursor updates — flush at most once per animation frame
+              scheduleCursorFlush()
             }
-          } catch (err) {
-            console.error('[AWARENESS] Failed to parse:', err)
+          } catch {
+            // Silently ignore malformed awareness messages
           }
         }
       }
 
       ws.onclose = () => {
-        console.log('[YJS STATUS] disconnected')
+        if (DEBUG) console.log('[YJS STATUS] disconnected')
         setConnected(false)
         wsRef.current = null
         reconnectTimer = setTimeout(connect, 1000)
       }
 
-      ws.onerror = (err) => console.error('[YJS] WebSocket error:', err)
+      ws.onerror = (err) => {
+        if (DEBUG) console.error('[YJS] WebSocket error:', err)
+      }
     }
 
     connect()
 
-    // Observe Y.Map → update React state
-    const observer = (_event: Y.YMapEvent<BoardObject>) => {
-      const allObjects = Array.from(yMap.values())
-      console.log('[YJS OBSERVE] Objects count:', allObjects.length)
-      setObjects(allObjects)
+    // Observe Y.Map changes — only update the keys that changed (Map-based)
+    const observer = (event: Y.YMapEvent<BoardObject>) => {
+      setObjectMap((prev) => {
+        const next = new Map(prev)
+        for (const [key, change] of event.changes.keys) {
+          if (change.action === 'delete') {
+            next.delete(key)
+          } else {
+            // 'add' or 'update' — set the new value
+            const val = yMap.get(key)
+            if (val) next.set(key, val)
+          }
+        }
+        if (DEBUG) console.log('[YJS OBSERVE] Objects count:', next.size)
+        return next
+      })
     }
     yMap.observe(observer)
 
-    // Also set initial objects (in case server state arrived before observer was registered)
-    setObjects(Array.from(yMap.values()))
+    // Set initial objects from server state
+    const initial = new Map<string, BoardObject>()
+    for (const [key, val] of yMap.entries()) {
+      initial.set(key, val)
+    }
+    setObjectMap(initial)
 
     // Broadcast LOCAL mutations to the server (skip remote-origin updates)
     const updateHandler = (update: Uint8Array, origin: unknown) => {
-      if (origin === REMOTE) return // Don't echo back what the server sent us
+      if (origin === REMOTE) return
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return
 
@@ -149,13 +197,14 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       msg[0] = MSG_YJS
       msg.set(update, 1)
       currentWs.send(msg)
-      console.log(`[YJS] Sent local update (${update.byteLength} bytes)`)
+      if (DEBUG) console.log(`[YJS] Sent local update (${update.byteLength} bytes)`)
     }
     yDoc.on('update', updateHandler)
 
     return () => {
-      console.log('[YJS] Disconnecting from room:', roomId)
+      if (DEBUG) console.log('[YJS] Disconnecting from room:', roomId)
       clearTimeout(reconnectTimer)
+      if (cursorRafRef.current) cancelAnimationFrame(cursorRafRef.current)
       yMap.unobserve(observer)
       yDoc.off('update', updateHandler)
       ws?.close()
@@ -170,7 +219,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
 
   const createObject = useCallback((obj: BoardObject) => {
     if (!yMapRef.current) return
-    console.log('[YJS CREATE]', obj.id, obj.type, { x: obj.x, y: obj.y })
+    if (DEBUG) console.log('[YJS CREATE]', obj.id, obj.type)
     yMapRef.current.set(obj.id, obj)
   }, [])
 
@@ -179,25 +228,38 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     const existing = yMapRef.current.get(id)
     if (!existing) return
     const updated = { ...existing, ...updates }
-    console.log('[YJS UPDATE]', id, 'BEFORE:', existing, 'AFTER:', updated)
     yMapRef.current.set(id, updated)
   }, [])
 
   const deleteObject = useCallback((id: string) => {
     if (!yMapRef.current) return
-    console.log('[YJS DELETE]', id)
+    if (DEBUG) console.log('[YJS DELETE]', id)
     yMapRef.current.delete(id)
   }, [])
 
-  // ---- Cursor awareness ---------------------------------------------------
+  // ---- Cursor awareness (throttled to 50ms) --------------------------------
 
-  const setCursor = useCallback((x: number, y: number) => {
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
-    sendAwareness(ws, clientIdRef.current, userName, userColor, { x, y })
-  }, [userName, userColor])
+  const throttledSend = useMemo(
+    () =>
+      throttle((x: number, y: number) => {
+        const ws = wsRef.current
+        if (!ws || ws.readyState !== WebSocket.OPEN) return
+        sendAwareness(ws, clientIdRef.current, userName, userColor, { x, y })
+      }, CURSOR_THROTTLE_MS),
+    [userName, userColor],
+  )
 
-  return { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor }
+  // Clean up throttle timer on unmount
+  useEffect(() => () => throttledSend.cancel(), [throttledSend])
+
+  const setCursor = useCallback(
+    (x: number, y: number) => {
+      throttledSend(x, y)
+    },
+    [throttledSend],
+  )
+
+  return { objects, objectMap, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor }
 }
 
 // ---------------------------------------------------------------------------
