@@ -11,6 +11,9 @@
  * Wire protocol (binary):
  *   byte[0]  = message type (0 = Yjs update, 1 = awareness)
  *   byte[1:] = payload (Yjs binary update OR UTF-8 JSON)
+ *
+ * IMPORTANT: All remote updates are applied with origin='remote' so
+ * the update handler doesn't echo them back to the server.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
@@ -24,6 +27,7 @@ import type { BoardObject } from './types'
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:1234'
 const MSG_YJS = 0       // Yjs document update
 const MSG_AWARENESS = 1 // Cursor / presence info
+const REMOTE = 'remote' // Origin tag to prevent echo loops
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,34 +78,40 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
         console.log('[YJS STATUS] connected')
         setConnected(true)
         sendAwareness(ws, clientIdRef.current, userName, userColor, null)
+
+        // Send our current state to the server so it can merge
+        // (handles case where client had offline edits or stale state)
+        const localState = Y.encodeStateAsUpdate(yDoc)
+        if (localState.length > 2) { // Skip if empty doc
+          const msg = new Uint8Array(1 + localState.length)
+          msg[0] = MSG_YJS
+          msg.set(localState, 1)
+          ws.send(msg)
+          console.log(`[YJS] Sent local state to server (${localState.byteLength} bytes)`)
+        }
       }
 
       ws.onmessage = (event) => {
-        try {
-          const data = new Uint8Array(event.data)
-          if (data.length < 2) return
+        const data = new Uint8Array(event.data)
+        if (data.length < 2) return
 
-          const msgType = data[0]
-          const payload = data.slice(1)
+        const msgType = data[0]
+        const payload = data.slice(1)
 
-          if (msgType === MSG_YJS) {
-            Y.applyUpdate(yDoc, payload)
-            console.log(`[YJS] Applied remote update (${payload.byteLength} bytes)`)
-          } else if (msgType === MSG_AWARENESS) {
+        if (msgType === MSG_YJS) {
+          // CRITICAL: Tag with 'remote' origin so updateHandler won't echo it back
+          Y.applyUpdate(yDoc, payload, REMOTE)
+          console.log(`[YJS] Applied remote update (${payload.byteLength} bytes)`)
+        } else if (msgType === MSG_AWARENESS) {
+          try {
             const info = JSON.parse(new TextDecoder().decode(payload)) as RemoteCursor
             if (info.clientId !== clientIdRef.current) {
               remoteCursorsRef.current.set(info.clientId, info)
               setRemoteCursors(Array.from(remoteCursorsRef.current.values()))
               console.log('[AWARENESS] Remote users:', remoteCursorsRef.current.size)
             }
-          }
-        } catch {
-          // Fallback: the server sends initial state without a type prefix
-          try {
-            Y.applyUpdate(yDoc, new Uint8Array(event.data))
-            console.log('[YJS SYNC] Applied initial state')
           } catch (err) {
-            console.error('[YJS] Failed to process message:', err)
+            console.error('[AWARENESS] Failed to parse:', err)
           }
         }
       }
@@ -119,18 +129,19 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     connect()
 
     // Observe Y.Map → update React state
-    const observer = (event: Y.YMapEvent<BoardObject>) => {
-      console.log('[YJS OBSERVE] Changes received:', event.changes.keys.size)
-      event.changes.keys.forEach((change, key) => {
-        console.log(`  ${key}: ${change.action}`, yMap.get(key))
-      })
-      setObjects(Array.from(yMap.values()))
+    const observer = (_event: Y.YMapEvent<BoardObject>) => {
+      const allObjects = Array.from(yMap.values())
+      console.log('[YJS OBSERVE] Objects count:', allObjects.length)
+      setObjects(allObjects)
     }
     yMap.observe(observer)
 
-    // Broadcast local mutations to the server
+    // Also set initial objects (in case server state arrived before observer was registered)
+    setObjects(Array.from(yMap.values()))
+
+    // Broadcast LOCAL mutations to the server (skip remote-origin updates)
     const updateHandler = (update: Uint8Array, origin: unknown) => {
-      if (origin === 'remote') return
+      if (origin === REMOTE) return // Don't echo back what the server sent us
       const currentWs = wsRef.current
       if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return
 
@@ -138,7 +149,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       msg[0] = MSG_YJS
       msg.set(update, 1)
       currentWs.send(msg)
-      console.log(`[YJS] Sent update (${update.byteLength} bytes)`)
+      console.log(`[YJS] Sent local update (${update.byteLength} bytes)`)
     }
     yDoc.on('update', updateHandler)
 
