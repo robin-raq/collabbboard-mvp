@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import { Group, Rect, Text, Ellipse } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
@@ -21,9 +21,9 @@ interface Props {
  *
  * Supports: sticky, rect, circle, text, frame
  * Features:
- *  - Drag to move
+ *  - Drag to move (live position update)
  *  - Click to select (shows blue border + resize handles)
- *  - Drag corner handles to resize
+ *  - Drag corner handles to resize (smooth live preview)
  *  - Double-click to edit text (textarea overlay)
  *  - Enter = save, Shift+Enter = newline, Esc = cancel, blur = save
  */
@@ -32,6 +32,18 @@ const BoardShape = memo(function BoardShape({
 }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(obj.text ?? '')
+
+  // Live resize state — tracks dimensions during drag for smooth preview
+  const [liveResize, setLiveResize] = useState<{
+    x: number; y: number; width: number; height: number
+  } | null>(null)
+  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+
+  // Use live resize values if actively resizing, otherwise use obj values
+  const displayX = liveResize ? liveResize.x : obj.x
+  const displayY = liveResize ? liveResize.y : obj.y
+  const displayW = liveResize ? liveResize.width : obj.width
+  const displayH = liveResize ? liveResize.height : obj.height
 
   useEffect(() => {
     if (!isEditing) setEditText(obj.text ?? '')
@@ -133,53 +145,86 @@ const BoardShape = memo(function BoardShape({
     }
   }, [isEditing]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- Resize handles -----------------------------------------------------
-  const handleResize = useCallback(
+  // ---- Resize handles (smooth live preview) --------------------------------
+
+  /** Calculate new bounds from a handle drag delta */
+  const calcResize = useCallback(
+    (corner: string, dx: number, dy: number) => {
+      const base = resizeStartRef.current ?? { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+      let newX = base.x
+      let newY = base.y
+      let newW = base.width
+      let newH = base.height
+
+      if (corner.includes('r')) newW = Math.max(MIN_SIZE, base.width + dx)
+      if (corner.includes('b')) newH = Math.max(MIN_SIZE, base.height + dy)
+      if (corner.includes('l')) {
+        const delta = Math.min(dx, base.width - MIN_SIZE)
+        newX = base.x + delta
+        newW = base.width - delta
+      }
+      if (corner.includes('t')) {
+        const delta = Math.min(dy, base.height - MIN_SIZE)
+        newY = base.y + delta
+        newH = base.height - delta
+      }
+
+      return { x: newX, y: newY, width: newW, height: newH }
+    },
+    [obj.x, obj.y, obj.width, obj.height],
+  )
+
+  /** Start resize — capture the starting dimensions */
+  const handleResizeDragStart = useCallback(
+    (_corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      resizeStartRef.current = { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+    },
+    [obj.x, obj.y, obj.width, obj.height],
+  )
+
+  /** Live resize — update local state every frame for smooth preview */
+  const handleResizeDragMove = useCallback(
     (corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
       e.cancelBubble = true
       const node = e.target
       const dx = node.x()
       const dy = node.y()
+      setLiveResize(calcResize(corner, dx, dy))
+    },
+    [calcResize],
+  )
 
-      let newX = obj.x
-      let newY = obj.y
-      let newW = obj.width
-      let newH = obj.height
-
-      if (corner.includes('r')) {
-        newW = Math.max(MIN_SIZE, obj.width + dx)
-      }
-      if (corner.includes('b')) {
-        newH = Math.max(MIN_SIZE, obj.height + dy)
-      }
-      if (corner.includes('l')) {
-        const delta = Math.min(dx, obj.width - MIN_SIZE)
-        newX = obj.x + delta
-        newW = obj.width - delta
-      }
-      if (corner.includes('t')) {
-        const delta = Math.min(dy, obj.height - MIN_SIZE)
-        newY = obj.y + delta
-        newH = obj.height - delta
-      }
-
-      // Reset handle position (it moved relative to group during drag)
+  /** End resize — commit to Yjs and clear live state */
+  const handleResizeDragEnd = useCallback(
+    (corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
+      e.cancelBubble = true
+      const node = e.target
+      const dx = node.x()
+      const dy = node.y()
+      // Reset handle position
       node.position({ x: 0, y: 0 })
 
-      onUpdate(obj.id, { x: newX, y: newY, width: newW, height: newH })
+      const newBounds = calcResize(corner, dx, dy)
+      setLiveResize(null)
+      resizeStartRef.current = null
+      onUpdate(obj.id, newBounds)
     },
-    [obj.id, obj.x, obj.y, obj.width, obj.height, onUpdate],
+    [obj.id, calcResize, onUpdate],
   )
 
   // ---- Render shape body --------------------------------------------------
   const renderBody = () => {
+    const w = displayW
+    const h = displayH
+
     switch (obj.type) {
       case 'sticky':
         return (
           <>
             <Rect
-              width={obj.width}
-              height={obj.height}
+              width={w}
+              height={h}
               fill={obj.fill}
               cornerRadius={4}
               shadowColor="rgba(0,0,0,0.15)"
@@ -188,8 +233,8 @@ const BoardShape = memo(function BoardShape({
             />
             <Text
               text={obj.text ?? ''}
-              width={obj.width}
-              height={obj.height}
+              width={w}
+              height={h}
               padding={10}
               fontSize={obj.fontSize ?? 14}
               fontFamily="system-ui, sans-serif"
@@ -204,8 +249,8 @@ const BoardShape = memo(function BoardShape({
         return (
           <>
             <Rect
-              width={obj.width}
-              height={obj.height}
+              width={w}
+              height={h}
               fill={obj.fill}
               stroke="#1E293B"
               strokeWidth={1}
@@ -214,8 +259,8 @@ const BoardShape = memo(function BoardShape({
             {obj.text && (
               <Text
                 text={obj.text}
-                width={obj.width}
-                height={obj.height}
+                width={w}
+                height={h}
                 padding={8}
                 fontSize={obj.fontSize ?? 14}
                 fontFamily="system-ui, sans-serif"
@@ -233,10 +278,10 @@ const BoardShape = memo(function BoardShape({
         return (
           <>
             <Ellipse
-              x={obj.width / 2}
-              y={obj.height / 2}
-              radiusX={obj.width / 2}
-              radiusY={obj.height / 2}
+              x={w / 2}
+              y={h / 2}
+              radiusX={w / 2}
+              radiusY={h / 2}
               fill={obj.fill}
               stroke="#1E293B"
               strokeWidth={1}
@@ -244,8 +289,8 @@ const BoardShape = memo(function BoardShape({
             {obj.text && (
               <Text
                 text={obj.text}
-                width={obj.width}
-                height={obj.height}
+                width={w}
+                height={h}
                 padding={8}
                 fontSize={obj.fontSize ?? 14}
                 fontFamily="system-ui, sans-serif"
@@ -263,8 +308,8 @@ const BoardShape = memo(function BoardShape({
         return (
           <Text
             text={obj.text || 'Text'}
-            width={obj.width}
-            height={obj.height}
+            width={w}
+            height={h}
             fontSize={obj.fontSize ?? 18}
             fontFamily="system-ui, sans-serif"
             fill={obj.fill === 'transparent' ? '#1E293B' : obj.fill}
@@ -277,8 +322,8 @@ const BoardShape = memo(function BoardShape({
         return (
           <>
             <Rect
-              width={obj.width}
-              height={obj.height}
+              width={w}
+              height={h}
               fill="transparent"
               stroke="#94A3B8"
               strokeWidth={2}
@@ -307,32 +352,34 @@ const BoardShape = memo(function BoardShape({
   const renderSelection = () => {
     if (!isSelected) return null
 
+    const w = displayW
+    const h = displayH
     const hs = HANDLE_SIZE / scale // Scale-independent handle size
     const handles = [
       { key: 'tl', x: 0, y: 0, cursor: 'nwse-resize' },
-      { key: 'tr', x: obj.width, y: 0, cursor: 'nesw-resize' },
-      { key: 'bl', x: 0, y: obj.height, cursor: 'nesw-resize' },
-      { key: 'br', x: obj.width, y: obj.height, cursor: 'nwse-resize' },
+      { key: 'tr', x: w, y: 0, cursor: 'nesw-resize' },
+      { key: 'bl', x: 0, y: h, cursor: 'nesw-resize' },
+      { key: 'br', x: w, y: h, cursor: 'nwse-resize' },
     ]
 
     return (
       <>
         {/* Selection border */}
         <Rect
-          width={obj.width}
-          height={obj.height}
+          width={w}
+          height={h}
           stroke="#2563EB"
           strokeWidth={2 / scale}
           fill="transparent"
           listening={false}
           dash={[6 / scale, 3 / scale]}
         />
-        {/* Resize handles */}
-        {handles.map((h) => (
+        {/* Resize handles — onDragMove gives smooth live preview */}
+        {handles.map((handle) => (
           <Rect
-            key={h.key}
-            x={h.x - hs / 2}
-            y={h.y - hs / 2}
+            key={handle.key}
+            x={handle.x - hs / 2}
+            y={handle.y - hs / 2}
             width={hs}
             height={hs}
             fill="#fff"
@@ -340,7 +387,9 @@ const BoardShape = memo(function BoardShape({
             strokeWidth={1.5 / scale}
             cornerRadius={1}
             draggable
-            onDragEnd={handleResize(h.key)}
+            onDragStart={handleResizeDragStart(handle.key)}
+            onDragMove={handleResizeDragMove(handle.key)}
+            onDragEnd={handleResizeDragEnd(handle.key)}
           />
         ))}
       </>
@@ -349,8 +398,8 @@ const BoardShape = memo(function BoardShape({
 
   return (
     <Group
-      x={obj.x}
-      y={obj.y}
+      x={displayX}
+      y={displayY}
       draggable
       onDragEnd={handleDragEnd}
       onClick={handleClick}

@@ -20,4 +20,4 @@ export type BoardObject = {
 }
 
 /** Active tool selected in the toolbar. */
-export type ToolType = 'select' | 'sticky' | 'rect' | 'circle' | 'text' | 'frame' | 'line'
+export type ToolType = 'select' | 'sticky' | 'rect' | 'circle' | 'text' | 'frame' | 'line' | 'arrow'
