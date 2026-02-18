@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { Stage, Layer, Circle, Text as KonvaText, Line } from 'react-konva'
+import { Stage, Layer, Circle, Rect as KonvaRect, Text as KonvaText, Line } from 'react-konva'
 import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import BoardShape from './BoardShape'
@@ -141,8 +141,9 @@ export default function Board({ userName }: BoardProps) {
       const world = pointerToWorld()
       if (!world) return
 
-      // Line tool — two-click mode
-      if (activeTool === 'line') {
+      // Line / Arrow tool — two-click mode
+      const isLineTool = activeTool === 'line' || activeTool === 'arrow'
+      if (isLineTool) {
         if (!lineStart) {
           // First click — set start point
           setLineStart({ x: world.x, y: world.y })
@@ -164,7 +165,7 @@ export default function Board({ userName }: BoardProps) {
               world.x - minX, world.y - minY,
             ],
             fromId: lineStart.fromId,
-            arrowEnd: true,
+            arrowEnd: activeTool === 'arrow',
           }
           createObject(obj)
           setSelectedId(id)
@@ -211,9 +212,10 @@ export default function Board({ userName }: BoardProps) {
     [activeTool, stagePos, scale, createObject, lineStart, pointerToWorld],
   )
 
-  // ---- Handle clicking on a shape with line tool to start connector --------
+  // ---- Handle clicking on a shape with line/arrow tool to start connector --
   const handleSelectOrConnect = useCallback((id: string) => {
-    if (activeTool === 'line') {
+    const isLineTool = activeTool === 'line' || activeTool === 'arrow'
+    if (isLineTool) {
       const target = objects.find((o) => o.id === id)
       if (!target) return
 
@@ -241,7 +243,7 @@ export default function Board({ userName }: BoardProps) {
           ],
           fromId: lineStart.fromId,
           toId: id,
-          arrowEnd: true,
+          arrowEnd: activeTool === 'arrow',
         }
         createObject(obj)
         setSelectedId(connId)
@@ -272,6 +274,7 @@ export default function Board({ userName }: BoardProps) {
         case 't': setActiveTool('text'); break
         case 'f': setActiveTool('frame'); break
         case 'l': setActiveTool('line'); setLineStart(null); break
+        case 'a': setActiveTool('arrow'); setLineStart(null); break
         case 'delete':
         case 'backspace':
           if (selectedId) {
@@ -336,7 +339,8 @@ export default function Board({ userName }: BoardProps) {
     { type: 'circle', label: 'Circle', icon: '●', shortcut: 'C' },
     { type: 'text', label: 'Text', icon: 'T', shortcut: 'T' },
     { type: 'frame', label: 'Frame', icon: '⊞', shortcut: 'F' },
-    { type: 'line', label: 'Line', icon: '↗', shortcut: 'L' },
+    { type: 'line', label: 'Line', icon: '—', shortcut: 'L' },
+    { type: 'arrow', label: 'Arrow', icon: '→', shortcut: 'A' },
   ]
 
   return (
@@ -456,41 +460,59 @@ export default function Board({ userName }: BoardProps) {
         <span style={{ color: '#374151', fontSize: 13 }}>
           {connected ? 'Connected' : 'Connecting...'}
         </span>
-        {remoteCursors.length > 0 && (
-          <>
-            <div style={{ width: 1, height: 16, background: '#e5e7eb' }} />
-            {remoteCursors.slice(0, 5).map((rc) => (
-              <span
-                key={rc.clientId}
-                title={rc.name}
-                style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  background: rc.color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: '#fff',
-                  flexShrink: 0,
-                }}
-              >
-                {rc.name.charAt(0).toUpperCase()}
-              </span>
-            ))}
-            {remoteCursors.length > 5 && (
-              <span style={{ fontSize: 11, color: '#6b7280' }}>
-                +{remoteCursors.length - 5}
-              </span>
-            )}
-          </>
+        {/* Always show the local user avatar */}
+        <div style={{ width: 1, height: 16, background: '#e5e7eb' }} />
+        <span
+          title={`${userName} (You)`}
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: '50%',
+            background: userColor,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#fff',
+            flexShrink: 0,
+            border: '2px solid #fff',
+            boxShadow: '0 0 0 1px #2563EB',
+          }}
+        >
+          {userName.charAt(0).toUpperCase()}
+        </span>
+        {/* Remote user avatars — show all connected users, not just those with cursor positions */}
+        {remoteCursors.slice(0, 5).map((rc) => (
+          <span
+            key={rc.clientId}
+            title={rc.name}
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: rc.color,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#fff',
+              flexShrink: 0,
+            }}
+          >
+            {rc.name.charAt(0).toUpperCase()}
+          </span>
+        ))}
+        {remoteCursors.length > 5 && (
+          <span style={{ fontSize: 11, color: '#6b7280' }}>
+            +{remoteCursors.length - 5}
+          </span>
         )}
       </div>
 
-      {/* Line tool hint */}
-      {activeTool === 'line' && (
+      {/* Line / Arrow tool hint */}
+      {(activeTool === 'line' || activeTool === 'arrow') && (
         <div style={{
           position: 'absolute',
           bottom: 56,
@@ -505,8 +527,8 @@ export default function Board({ userName }: BoardProps) {
           fontFamily: 'system-ui, sans-serif',
         }}>
           {lineStart
-            ? 'Click to set endpoint (or click a shape to connect)'
-            : 'Click to set start point (or click a shape to connect from)'}
+            ? `Click to set endpoint (or click a shape to connect) — ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`
+            : `Click to set start point (or click a shape to connect from) — ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`}
         </div>
       )}
 
@@ -524,7 +546,7 @@ export default function Board({ userName }: BoardProps) {
         ref={stageRef}
         width={size.w}
         height={size.h}
-        draggable={activeTool === 'select'}
+        draggable={activeTool === 'select' && !lineStart}
         scaleX={scale}
         scaleY={scale}
         x={stagePos.x}
@@ -587,13 +609,27 @@ export default function Board({ userName }: BoardProps) {
 // ---- Remote cursor display ------------------------------------------------
 
 function CursorBadge({ x, y, name, color }: { x: number; y: number; name: string; color: string }) {
+  const labelWidth = name.length * 7 + 10
   return (
     <>
+      {/* Cursor pointer shape */}
       <Line
         points={[x, y, x + 2, y + 12, x + 5, y + 9, x + 10, y + 14, x + 12, y + 12, x + 7, y + 7, x + 11, y + 5, x, y]}
         fill={color}
+        stroke={color}
+        strokeWidth={1}
         closed
       />
+      {/* Name label background */}
+      <KonvaRect
+        x={x + 14}
+        y={y}
+        width={labelWidth}
+        height={18}
+        fill={color}
+        cornerRadius={4}
+      />
+      {/* Name label text */}
       <KonvaText
         x={x + 14}
         y={y}
@@ -602,8 +638,6 @@ function CursorBadge({ x, y, name, color }: { x: number; y: number; name: string
         fill="#fff"
         padding={3}
       />
-      {/* Label background behind name */}
-      <Circle x={x + 14} y={y + 7} radius={0} />
     </>
   )
 }

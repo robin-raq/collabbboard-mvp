@@ -14,6 +14,11 @@
  *  - Remote cursor updates batched via requestAnimationFrame
  *  - Console logs gated behind import.meta.env.DEV
  *
+ * Presence awareness:
+ *  - Periodic heartbeat (every 2s) so remote users know we're online
+ *  - Stale cursor cleanup (remove after 8s of no updates)
+ *  - Awareness messages include timestamp for staleness detection
+ *
  * Wire protocol (binary):
  *   byte[0]  = message type (0 = Yjs update, 1 = awareness)
  *   byte[1:] = payload (Yjs binary update OR UTF-8 JSON)
@@ -37,6 +42,8 @@ const MSG_AWARENESS = 1 // Cursor / presence info
 const REMOTE = 'remote' // Origin tag to prevent echo loops
 const DEBUG = import.meta.env.DEV // Gate all logs behind dev mode
 const CURSOR_THROTTLE_MS = 50 // Throttle cursor sends to 20/sec
+const HEARTBEAT_MS = 2000     // Send presence heartbeat every 2s
+const STALE_TIMEOUT_MS = 8000 // Remove cursors not heard from in 8s
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +54,8 @@ export interface RemoteCursor {
   cursor: { x: number; y: number } | null
   name: string
   color: string
+  /** Timestamp of last update — used for stale detection */
+  lastSeen?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +73,9 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(crypto.randomUUID())
   const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map())
+
+  // Track last known cursor position for heartbeat resends
+  const lastCursorRef = useRef<{ x: number; y: number } | null>(null)
 
   // Batch remote cursor updates via requestAnimationFrame
   const cursorRafRef = useRef<number | null>(null)
@@ -100,6 +112,8 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
 
     let ws: WebSocket
     let reconnectTimer: ReturnType<typeof setTimeout>
+    let heartbeatTimer: ReturnType<typeof setInterval>
+    let staleCleanupTimer: ReturnType<typeof setInterval>
 
     function connect() {
       ws = new WebSocket(wsUrl)
@@ -120,6 +134,14 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
           ws.send(msg)
           if (DEBUG) console.log(`[YJS] Sent local state to server (${localState.byteLength} bytes)`)
         }
+
+        // Start periodic heartbeat — keeps our presence visible even when
+        // the user isn't moving their mouse
+        heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            sendAwareness(ws, clientIdRef.current, userName, userColor, lastCursorRef.current)
+          }
+        }, HEARTBEAT_MS)
       }
 
       ws.onmessage = (event) => {
@@ -137,6 +159,8 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
           try {
             const info = JSON.parse(new TextDecoder().decode(payload)) as RemoteCursor
             if (info.clientId !== clientIdRef.current) {
+              // Stamp with local receive time for stale detection
+              info.lastSeen = Date.now()
               remoteCursorsRef.current.set(info.clientId, info)
               // Batch cursor updates — flush at most once per animation frame
               scheduleCursorFlush()
@@ -151,6 +175,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
         if (DEBUG) console.log('[YJS STATUS] disconnected')
         setConnected(false)
         wsRef.current = null
+        clearInterval(heartbeatTimer)
         reconnectTimer = setTimeout(connect, 1000)
       }
 
@@ -160,6 +185,21 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     }
 
     connect()
+
+    // Periodically clean up stale remote cursors (users who disconnected
+    // without a clean close — their last awareness message goes stale)
+    staleCleanupTimer = setInterval(() => {
+      const now = Date.now()
+      let removed = false
+      for (const [id, cursor] of remoteCursorsRef.current) {
+        if (cursor.lastSeen && now - cursor.lastSeen > STALE_TIMEOUT_MS) {
+          remoteCursorsRef.current.delete(id)
+          removed = true
+          if (DEBUG) console.log('[YJS] Removed stale cursor:', cursor.name)
+        }
+      }
+      if (removed) scheduleCursorFlush()
+    }, STALE_TIMEOUT_MS / 2)
 
     // Observe Y.Map changes — only update the keys that changed (Map-based)
     // IMPORTANT: Read event.changes.keys eagerly (synchronously) because
@@ -221,6 +261,8 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     return () => {
       if (DEBUG) console.log('[YJS] Disconnecting from room:', roomId)
       clearTimeout(reconnectTimer)
+      clearInterval(heartbeatTimer)
+      clearInterval(staleCleanupTimer)
       if (cursorRafRef.current) cancelAnimationFrame(cursorRafRef.current)
       yMap.unobserve(observer)
       yDoc.off('update', updateHandler)
@@ -261,6 +303,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       throttle((x: number, y: number) => {
         const ws = wsRef.current
         if (!ws || ws.readyState !== WebSocket.OPEN) return
+        lastCursorRef.current = { x, y }
         sendAwareness(ws, clientIdRef.current, userName, userColor, { x, y })
       }, CURSOR_THROTTLE_MS),
     [userName, userColor],
