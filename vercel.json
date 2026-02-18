@@ -1,9 +1,5 @@
 {
   "buildCommand": "cd client && npm install && npm run build",
   "outputDirectory": "client/dist",
-  "env": {
-    "VITE_CLERK_PUBLISHABLE_KEY": "@vite_clerk_publishable_key",
-    "VITE_WS_URL": "@vite_ws_url"
-  },
   "regions": ["iad1"]
 }
