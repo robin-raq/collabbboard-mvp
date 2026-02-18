@@ -3,7 +3,8 @@ import { Group, Rect, Text, Ellipse } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
 
-const HANDLE_SIZE = 8
+const HANDLE_SIZE = 10
+const HANDLE_HIT_SIZE = 24 // Larger invisible hit area for easier grabbing
 const MIN_SIZE = 30
 
 interface Props {
@@ -32,12 +33,19 @@ const BoardShape = memo(function BoardShape({
 }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(obj.text ?? '')
+  const shapeGroupRef = useRef<Konva.Group>(null)
 
   // Live resize state — tracks dimensions during drag for smooth preview
   const [liveResize, setLiveResize] = useState<{
     x: number; y: number; width: number; height: number
   } | null>(null)
-  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
+  // Tracks the starting obj bounds AND the handle's initial position
+  const resizeStartRef = useRef<{
+    x: number; y: number; width: number; height: number
+    handleStartX: number; handleStartY: number
+  } | null>(null)
+  // Flag to prevent the parent Group drag from firing during a resize
+  const isResizingRef = useRef(false)
 
   // Use live resize values if actively resizing, otherwise use obj values
   const displayX = liveResize ? liveResize.x : obj.x
@@ -50,8 +58,16 @@ const BoardShape = memo(function BoardShape({
   }, [obj.text, isEditing])
 
   // ---- Drag ---------------------------------------------------------------
+  const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    // If a resize is in progress, prevent the Group from dragging
+    if (isResizingRef.current) {
+      e.target.stopDrag()
+    }
+  }, [])
+
   const handleDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    // Get the Group's position (it's the drag target)
+    if (isResizingRef.current) return
+    if (e.target !== e.currentTarget) return
     const node = e.target
     onUpdate(obj.id, { x: node.x(), y: node.y() })
   }, [obj.id, onUpdate])
@@ -81,7 +97,6 @@ const BoardShape = memo(function BoardShape({
     const container = stage.container()
     const rect = container.getBoundingClientRect()
 
-    // For sticky notes, match the fill. For other shapes, use transparent bg over the shape.
     const bgColor = obj.type === 'sticky' ? obj.fill : 'rgba(255,255,255,0.95)'
 
     const textarea = document.createElement('textarea')
@@ -147,10 +162,12 @@ const BoardShape = memo(function BoardShape({
 
   // ---- Resize handles (smooth live preview) --------------------------------
 
-  /** Calculate new bounds from a handle drag delta */
+  /** Calculate new bounds from a pure delta (pixels dragged from start) */
   const calcResize = useCallback(
     (corner: string, dx: number, dy: number) => {
-      const base = resizeStartRef.current ?? { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+      const base = resizeStartRef.current
+      if (!base) return { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+
       let newX = base.x
       let newY = base.y
       let newW = base.width
@@ -174,22 +191,31 @@ const BoardShape = memo(function BoardShape({
     [obj.x, obj.y, obj.width, obj.height],
   )
 
-  /** Start resize — capture the starting dimensions */
+  /** Start resize — capture starting dims + handle position */
   const handleResizeDragStart = useCallback(
     (_corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
       e.cancelBubble = true
-      resizeStartRef.current = { x: obj.x, y: obj.y, width: obj.width, height: obj.height }
+      isResizingRef.current = true
+      const node = e.target
+      // Disable dragging on the outer shape Group so it doesn't move during resize
+      const shapeGroup = shapeGroupRef.current
+      if (shapeGroup) shapeGroup.draggable(false)
+      resizeStartRef.current = {
+        x: obj.x, y: obj.y, width: obj.width, height: obj.height,
+        handleStartX: node.x(), handleStartY: node.y(),
+      }
     },
     [obj.x, obj.y, obj.width, obj.height],
   )
 
-  /** Live resize — update local state every frame for smooth preview */
+  /** Live resize — compute pure delta from handle start pos for smooth preview */
   const handleResizeDragMove = useCallback(
     (corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
       e.cancelBubble = true
+      if (!resizeStartRef.current) return
       const node = e.target
-      const dx = node.x()
-      const dy = node.y()
+      const dx = node.x() - resizeStartRef.current.handleStartX
+      const dy = node.y() - resizeStartRef.current.handleStartY
       setLiveResize(calcResize(corner, dx, dy))
     },
     [calcResize],
@@ -199,15 +225,26 @@ const BoardShape = memo(function BoardShape({
   const handleResizeDragEnd = useCallback(
     (corner: string) => (e: Konva.KonvaEventObject<DragEvent>) => {
       e.cancelBubble = true
+      if (!resizeStartRef.current) return
       const node = e.target
-      const dx = node.x()
-      const dy = node.y()
-      // Reset handle position
-      node.position({ x: 0, y: 0 })
+      const dx = node.x() - resizeStartRef.current.handleStartX
+      const dy = node.y() - resizeStartRef.current.handleStartY
+
+      // Reset handle position back to its original spot
+      node.position({ x: resizeStartRef.current.handleStartX, y: resizeStartRef.current.handleStartY })
 
       const newBounds = calcResize(corner, dx, dy)
+
+      // Re-enable outer shape Group dragging and reset its position
+      const shapeGroup = shapeGroupRef.current
+      if (shapeGroup) {
+        shapeGroup.draggable(true)
+        shapeGroup.position({ x: newBounds.x, y: newBounds.y })
+      }
+
       setLiveResize(null)
       resizeStartRef.current = null
+      setTimeout(() => { isResizingRef.current = false }, 0)
       onUpdate(obj.id, newBounds)
     },
     [obj.id, calcResize, onUpdate],
@@ -354,12 +391,13 @@ const BoardShape = memo(function BoardShape({
 
     const w = displayW
     const h = displayH
-    const hs = HANDLE_SIZE / scale // Scale-independent handle size
+    const hs = HANDLE_SIZE / scale
+    const hitHs = HANDLE_HIT_SIZE / scale
     const handles = [
-      { key: 'tl', x: 0, y: 0, cursor: 'nwse-resize' },
-      { key: 'tr', x: w, y: 0, cursor: 'nesw-resize' },
-      { key: 'bl', x: 0, y: h, cursor: 'nesw-resize' },
-      { key: 'br', x: w, y: h, cursor: 'nwse-resize' },
+      { key: 'tl', x: 0, y: 0 },
+      { key: 'tr', x: w, y: 0 },
+      { key: 'bl', x: 0, y: h },
+      { key: 'br', x: w, y: h },
     ]
 
     return (
@@ -374,23 +412,34 @@ const BoardShape = memo(function BoardShape({
           listening={false}
           dash={[6 / scale, 3 / scale]}
         />
-        {/* Resize handles — onDragMove gives smooth live preview */}
+        {/* Resize handles */}
         {handles.map((handle) => (
-          <Rect
-            key={handle.key}
-            x={handle.x - hs / 2}
-            y={handle.y - hs / 2}
-            width={hs}
-            height={hs}
-            fill="#fff"
-            stroke="#2563EB"
-            strokeWidth={1.5 / scale}
-            cornerRadius={1}
-            draggable
-            onDragStart={handleResizeDragStart(handle.key)}
-            onDragMove={handleResizeDragMove(handle.key)}
-            onDragEnd={handleResizeDragEnd(handle.key)}
-          />
+          <Group key={handle.key}>
+            {/* Visual handle (small white square) */}
+            <Rect
+              x={handle.x - hs / 2}
+              y={handle.y - hs / 2}
+              width={hs}
+              height={hs}
+              fill="#fff"
+              stroke="#2563EB"
+              strokeWidth={1.5 / scale}
+              cornerRadius={2}
+              listening={false}
+            />
+            {/* Draggable hit area (larger invisible rect for easy grabbing) */}
+            <Rect
+              x={handle.x - hitHs / 2}
+              y={handle.y - hitHs / 2}
+              width={hitHs}
+              height={hitHs}
+              fill="transparent"
+              draggable
+              onDragStart={handleResizeDragStart(handle.key)}
+              onDragMove={handleResizeDragMove(handle.key)}
+              onDragEnd={handleResizeDragEnd(handle.key)}
+            />
+          </Group>
         ))}
       </>
     )
@@ -398,9 +447,11 @@ const BoardShape = memo(function BoardShape({
 
   return (
     <Group
+      ref={shapeGroupRef}
       x={displayX}
       y={displayY}
       draggable
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
       onTap={() => onSelect(obj.id)}
