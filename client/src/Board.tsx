@@ -3,6 +3,7 @@ import { Stage, Layer, Circle, Text as KonvaText, Line } from 'react-konva'
 import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import BoardShape from './BoardShape'
+import Connector from './Connector'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 
@@ -33,6 +34,8 @@ export default function Board({ userName }: BoardProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [activeTool, setActiveTool] = useState<ToolType>('select')
   const [showColorPicker, setShowColorPicker] = useState(false)
+  // Line tool: first click sets the start point, second click creates the line
+  const [lineStart, setLineStart] = useState<{ x: number; y: number; fromId?: string } | null>(null)
 
   // Track window resize
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
@@ -117,27 +120,68 @@ export default function Board({ userName }: BoardProps) {
     [setCursor, stagePos, scale],
   )
 
+  // ---- Helper: convert screen pointer to world coords ----------------------
+  const pointerToWorld = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage) return null
+    const pointer = stage.getPointerPosition()
+    if (!pointer) return null
+    return {
+      x: (pointer.x - stagePos.x) / scale,
+      y: (pointer.y - stagePos.y) / scale,
+    }
+  }, [stagePos, scale])
+
   // ---- Click on empty canvas = deselect or create object -------------------
   const handleStageClick = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       // Only handle clicks on the stage itself (empty space)
       if (e.target !== e.target.getStage()) return
 
-      if (activeTool === 'select') {
-        setSelectedId(null)
-        setShowColorPicker(false)
+      const world = pointerToWorld()
+      if (!world) return
+
+      // Line tool — two-click mode
+      if (activeTool === 'line') {
+        if (!lineStart) {
+          // First click — set start point
+          setLineStart({ x: world.x, y: world.y })
+        } else {
+          // Second click — create the line
+          const id = crypto.randomUUID()
+          const minX = Math.min(lineStart.x, world.x)
+          const minY = Math.min(lineStart.y, world.y)
+          const obj: BoardObject = {
+            id,
+            type: 'line',
+            x: minX,
+            y: minY,
+            width: Math.abs(world.x - lineStart.x) || 1,
+            height: Math.abs(world.y - lineStart.y) || 1,
+            fill: '#374151',
+            points: [
+              lineStart.x - minX, lineStart.y - minY,
+              world.x - minX, world.y - minY,
+            ],
+            fromId: lineStart.fromId,
+            arrowEnd: true,
+          }
+          createObject(obj)
+          setSelectedId(id)
+          setLineStart(null)
+          setActiveTool('select')
+        }
         return
       }
 
-      // Create object at click position
-      const stage = stageRef.current
-      if (!stage) return
-      const pointer = stage.getPointerPosition()
-      if (!pointer) return
+      if (activeTool === 'select') {
+        setSelectedId(null)
+        setShowColorPicker(false)
+        setLineStart(null)
+        return
+      }
 
-      const worldX = (pointer.x - stagePos.x) / scale
-      const worldY = (pointer.y - stagePos.y) / scale
-
+      // Create shape at click position
       const id = crypto.randomUUID()
       const defaults: Record<string, Partial<BoardObject>> = {
         sticky: { width: 150, height: 150, fill: '#FFEB3B', text: 'New note' },
@@ -151,8 +195,8 @@ export default function Board({ userName }: BoardProps) {
       const obj: BoardObject = {
         id,
         type: activeTool as BoardObject['type'],
-        x: worldX - (d.width ?? 100) / 2,
-        y: worldY - (d.height ?? 100) / 2,
+        x: world.x - (d.width ?? 100) / 2,
+        y: world.y - (d.height ?? 100) / 2,
         width: d.width ?? 100,
         height: d.height ?? 100,
         fill: d.fill ?? '#42A5F5',
@@ -162,17 +206,56 @@ export default function Board({ userName }: BoardProps) {
 
       createObject(obj)
       setSelectedId(id)
-      // Switch back to select after placing
       setActiveTool('select')
     },
-    [activeTool, stagePos, scale, createObject],
+    [activeTool, stagePos, scale, createObject, lineStart, pointerToWorld],
   )
 
-  // ---- Selection ----------------------------------------------------------
-  const handleSelect = useCallback((id: string) => {
+  // ---- Handle clicking on a shape with line tool to start connector --------
+  const handleSelectOrConnect = useCallback((id: string) => {
+    if (activeTool === 'line') {
+      const target = objects.find((o) => o.id === id)
+      if (!target) return
+
+      if (!lineStart) {
+        // Start connector from this object
+        const center = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
+        setLineStart({ x: center.x, y: center.y, fromId: id })
+      } else {
+        // End connector at this object
+        const center = { x: target.x + target.width / 2, y: target.y + target.height / 2 }
+        const minX = Math.min(lineStart.x, center.x)
+        const minY = Math.min(lineStart.y, center.y)
+        const connId = crypto.randomUUID()
+        const obj: BoardObject = {
+          id: connId,
+          type: 'line',
+          x: minX,
+          y: minY,
+          width: Math.abs(center.x - lineStart.x) || 1,
+          height: Math.abs(center.y - lineStart.y) || 1,
+          fill: '#374151',
+          points: [
+            lineStart.x - minX, lineStart.y - minY,
+            center.x - minX, center.y - minY,
+          ],
+          fromId: lineStart.fromId,
+          toId: id,
+          arrowEnd: true,
+        }
+        createObject(obj)
+        setSelectedId(connId)
+        setLineStart(null)
+        setActiveTool('select')
+      }
+      return
+    }
+
     setSelectedId(id)
     setShowColorPicker(false)
-  }, [])
+  }, [activeTool, lineStart, objects, createObject])
+
+  // handleSelect is now handleSelectOrConnect (defined above)
 
   // ---- Keyboard shortcuts -------------------------------------------------
   useEffect(() => {
@@ -188,6 +271,7 @@ export default function Board({ userName }: BoardProps) {
         case 'c': setActiveTool('circle'); break
         case 't': setActiveTool('text'); break
         case 'f': setActiveTool('frame'); break
+        case 'l': setActiveTool('line'); setLineStart(null); break
         case 'delete':
         case 'backspace':
           if (selectedId) {
@@ -199,6 +283,7 @@ export default function Board({ userName }: BoardProps) {
           setSelectedId(null)
           setActiveTool('select')
           setShowColorPicker(false)
+          setLineStart(null)
           break
         case 'd':
           if ((e.ctrlKey || e.metaKey) && selectedId) {
@@ -251,6 +336,7 @@ export default function Board({ userName }: BoardProps) {
     { type: 'circle', label: 'Circle', icon: '●', shortcut: 'C' },
     { type: 'text', label: 'Text', icon: 'T', shortcut: 'T' },
     { type: 'frame', label: 'Frame', icon: '⊞', shortcut: 'F' },
+    { type: 'line', label: 'Line', icon: '↗', shortcut: 'L' },
   ]
 
   return (
@@ -403,6 +489,27 @@ export default function Board({ userName }: BoardProps) {
         )}
       </div>
 
+      {/* Line tool hint */}
+      {activeTool === 'line' && (
+        <div style={{
+          position: 'absolute',
+          bottom: 56,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          background: '#1E293B',
+          color: '#fff',
+          padding: '6px 16px',
+          borderRadius: 8,
+          fontSize: 12,
+          fontFamily: 'system-ui, sans-serif',
+        }}>
+          {lineStart
+            ? 'Click to set endpoint (or click a shape to connect)'
+            : 'Click to set start point (or click a shape to connect from)'}
+        </div>
+      )}
+
       {/* Zoom controls (bottom right) */}
       <div style={zoomControlsStyle}>
         <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out">−</button>
@@ -431,18 +538,30 @@ export default function Board({ userName }: BoardProps) {
       >
         {/* Objects layer */}
         <Layer>
-          {visibleObjects.map((obj) => (
-            <BoardShape
-              key={obj.id}
-              obj={obj}
-              isSelected={obj.id === selectedId}
-              onSelect={handleSelect}
-              onUpdate={updateObject}
-              stageRef={stageRef}
-              scale={scale}
-              stagePos={stagePos}
-            />
-          ))}
+          {visibleObjects.map((obj) =>
+            obj.type === 'line' ? (
+              <Connector
+                key={obj.id}
+                obj={obj}
+                isSelected={obj.id === selectedId}
+                onSelect={handleSelectOrConnect}
+                onUpdate={updateObject}
+                allObjects={objects}
+                scale={scale}
+              />
+            ) : (
+              <BoardShape
+                key={obj.id}
+                obj={obj}
+                isSelected={obj.id === selectedId}
+                onSelect={handleSelectOrConnect}
+                onUpdate={updateObject}
+                stageRef={stageRef}
+                scale={scale}
+                stagePos={stagePos}
+              />
+            )
+          )}
         </Layer>
 
         {/* Remote cursors layer */}
