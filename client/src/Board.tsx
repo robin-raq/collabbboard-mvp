@@ -246,7 +246,7 @@ function CursorBadge({ x, y, name, color }: { x: number; y: number; name: string
         y={y}
         text={name}
         fontSize={11}
-        fill="#fff"
+        fill="#EF4444"
         padding={3}
       />
       {/* Label background */}
