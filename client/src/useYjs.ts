@@ -1,12 +1,33 @@
+/**
+ * useYjs — Real-time collaborative state via Yjs CRDT over WebSocket.
+ *
+ * This hook manages the entire sync lifecycle:
+ *  1. Creates a Y.Doc with a shared Y.Map<BoardObject>
+ *  2. Connects to the WebSocket relay server
+ *  3. Sends/receives binary Yjs updates + JSON awareness messages
+ *  4. Exposes CRUD operations that mutate the Y.Map (auto-synced)
+ *  5. Tracks remote cursors via the awareness protocol
+ *
+ * Wire protocol (binary):
+ *   byte[0]  = message type (0 = Yjs update, 1 = awareness)
+ *   byte[1:] = payload (Yjs binary update OR UTF-8 JSON)
+ */
+
 import { useEffect, useState, useCallback, useRef } from 'react'
 import * as Y from 'yjs'
 import type { BoardObject } from './types'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:1234'
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
-// Message types: 0 = yjs update, 1 = awareness
-const MSG_YJS = 0
-const MSG_AWARENESS = 1
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:1234'
+const MSG_YJS = 0       // Yjs document update
+const MSG_AWARENESS = 1 // Cursor / presence info
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface RemoteCursor {
   clientId: string
@@ -14,6 +35,10 @@ export interface RemoteCursor {
   name: string
   color: string
 }
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useYjs(roomId: string, userName: string, userColor: string) {
   const [objects, setObjects] = useState<BoardObject[]>([])
@@ -25,6 +50,8 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(crypto.randomUUID())
   const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map())
+
+  // ---- WebSocket + Yjs sync lifecycle ------------------------------------
 
   useEffect(() => {
     const yDoc = new Y.Doc()
@@ -46,40 +73,34 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       ws.onopen = () => {
         console.log('[YJS STATUS] connected')
         setConnected(true)
-        // Send our awareness info
         sendAwareness(ws, clientIdRef.current, userName, userColor, null)
       }
 
       ws.onmessage = (event) => {
         try {
           const data = new Uint8Array(event.data)
-
           if (data.length < 2) return
 
           const msgType = data[0]
           const payload = data.slice(1)
 
           if (msgType === MSG_YJS) {
-            // Yjs document update
             Y.applyUpdate(yDoc, payload)
             console.log(`[YJS] Applied remote update (${payload.byteLength} bytes)`)
           } else if (msgType === MSG_AWARENESS) {
-            // Awareness / cursor update from another client
-            const text = new TextDecoder().decode(payload)
-            const info = JSON.parse(text) as RemoteCursor
+            const info = JSON.parse(new TextDecoder().decode(payload)) as RemoteCursor
             if (info.clientId !== clientIdRef.current) {
               remoteCursorsRef.current.set(info.clientId, info)
               setRemoteCursors(Array.from(remoteCursorsRef.current.values()))
               console.log('[AWARENESS] Remote users:', remoteCursorsRef.current.size)
             }
           }
-        } catch (err) {
-          // Could be initial raw Yjs state (no prefix byte) from server
+        } catch {
+          // Fallback: the server sends initial state without a type prefix
           try {
-            const data = new Uint8Array(event.data)
-            Y.applyUpdate(yDoc, data)
+            Y.applyUpdate(yDoc, new Uint8Array(event.data))
             console.log('[YJS SYNC] Applied initial state')
-          } catch {
+          } catch (err) {
             console.error('[YJS] Failed to process message:', err)
           }
         }
@@ -89,18 +110,15 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
         console.log('[YJS STATUS] disconnected')
         setConnected(false)
         wsRef.current = null
-        // Reconnect after 1s
         reconnectTimer = setTimeout(connect, 1000)
       }
 
-      ws.onerror = (err) => {
-        console.error('[YJS] WebSocket error:', err)
-      }
+      ws.onerror = (err) => console.error('[YJS] WebSocket error:', err)
     }
 
     connect()
 
-    // Observe Y.Map changes and update React state
+    // Observe Y.Map → update React state
     const observer = (event: Y.YMapEvent<BoardObject>) => {
       console.log('[YJS OBSERVE] Changes received:', event.changes.keys.size)
       event.changes.keys.forEach((change, key) => {
@@ -110,16 +128,16 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     }
     yMap.observe(observer)
 
-    // Send Yjs updates to server when local doc changes
+    // Broadcast local mutations to the server
     const updateHandler = (update: Uint8Array, origin: unknown) => {
-      if (origin === 'remote') return // Don't echo back remote updates
-      const ws = wsRef.current
-      if (!ws || ws.readyState !== WebSocket.OPEN) return
+      if (origin === 'remote') return
+      const currentWs = wsRef.current
+      if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return
 
       const msg = new Uint8Array(1 + update.length)
       msg[0] = MSG_YJS
       msg.set(update, 1)
-      ws.send(msg)
+      currentWs.send(msg)
       console.log(`[YJS] Sent update (${update.byteLength} bytes)`)
     }
     yDoc.on('update', updateHandler)
@@ -137,29 +155,30 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     }
   }, [roomId, userName, userColor])
 
+  // ---- CRUD operations (mutate Y.Map → auto-synced) ----------------------
+
   const createObject = useCallback((obj: BoardObject) => {
-    const yMap = yMapRef.current
-    if (!yMap) return
+    if (!yMapRef.current) return
     console.log('[YJS CREATE]', obj.id, obj.type, { x: obj.x, y: obj.y })
-    yMap.set(obj.id, obj)
+    yMapRef.current.set(obj.id, obj)
   }, [])
 
   const updateObject = useCallback((id: string, updates: Partial<BoardObject>) => {
-    const yMap = yMapRef.current
-    if (!yMap) return
-    const existing = yMap.get(id)
+    if (!yMapRef.current) return
+    const existing = yMapRef.current.get(id)
     if (!existing) return
     const updated = { ...existing, ...updates }
     console.log('[YJS UPDATE]', id, 'BEFORE:', existing, 'AFTER:', updated)
-    yMap.set(id, updated)
+    yMapRef.current.set(id, updated)
   }, [])
 
   const deleteObject = useCallback((id: string) => {
-    const yMap = yMapRef.current
-    if (!yMap) return
+    if (!yMapRef.current) return
     console.log('[YJS DELETE]', id)
-    yMap.delete(id)
+    yMapRef.current.delete(id)
   }, [])
+
+  // ---- Cursor awareness ---------------------------------------------------
 
   const setCursor = useCallback((x: number, y: number) => {
     const ws = wsRef.current
@@ -167,23 +186,20 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     sendAwareness(ws, clientIdRef.current, userName, userColor, { x, y })
   }, [userName, userColor])
 
-  return {
-    objects,
-    remoteCursors,
-    connected,
-    createObject,
-    updateObject,
-    deleteObject,
-    setCursor,
-  }
+  return { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor }
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Encode and send an awareness message (cursor + user info). */
 function sendAwareness(
   ws: WebSocket,
   clientId: string,
   name: string,
   color: string,
-  cursor: { x: number; y: number } | null
+  cursor: { x: number; y: number } | null,
 ) {
   const payload = JSON.stringify({ clientId, name, color, cursor })
   const encoded = new TextEncoder().encode(payload)
