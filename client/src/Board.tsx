@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { Stage, Layer, Circle, Rect as KonvaRect, Text as KonvaText, Line } from 'react-konva'
+import { Stage, Layer, Rect as KonvaRect, Text as KonvaText, Line } from 'react-konva'
 import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import BoardShape from './BoardShape'
