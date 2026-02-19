@@ -194,7 +194,7 @@ export default function Board({ userName }: BoardProps) {
 
   // ---- Click on empty canvas = deselect or create object -------------------
   const handleStageClick = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       // Only handle clicks on the stage itself (empty space)
       if (e.target !== e.target.getStage()) return
 
@@ -537,7 +537,7 @@ export default function Board({ userName }: BoardProps) {
         onMouseDown={handleStageMouseDown}
         onMouseUp={handleStageMouseUp}
         onClick={handleStageClick}
-        onTap={handleStageClick as any}
+        onTap={handleStageClick}
         style={{ position: 'relative', zIndex: 1, cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
       >
         {/* Objects layer */}

@@ -16,7 +16,7 @@ function AuthenticatedBoard() {
     user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ||
     'User'
 
-  console.log('[AUTH] Signed in as:', name)
+  if (import.meta.env.DEV) console.log('[AUTH] Signed in as:', name)
   return <Board userName={name} />
 }
 
@@ -24,7 +24,7 @@ function GuestBoard() {
   const [guestName] = useState(
     () => GUEST_NAMES[Math.floor(Math.random() * GUEST_NAMES.length)]
   )
-  console.log('[AUTH] Joined as guest:', guestName)
+  if (import.meta.env.DEV) console.log('[AUTH] Joined as guest:', guestName)
   return <Board userName={guestName} />
 }
 
