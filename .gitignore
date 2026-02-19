@@ -39,6 +39,9 @@ pnpm-debug.log*
 # Testing
 coverage/
 
+# Planning docs
+planning-docs/
+
 # Misc
 *.tsbuildinfo
 .vercel
