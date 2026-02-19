@@ -664,7 +664,7 @@ export default function Board({ userName }: BoardProps) {
         ref={stageRef}
         width={size.w}
         height={size.h}
-        draggable={activeTool === 'select' && !lineStart && !selectionStartRef.current}
+        draggable={activeTool === 'select' && !lineStart}
         scaleX={scale}
         scaleY={scale}
         x={stagePos.x}
