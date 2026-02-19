@@ -22,12 +22,23 @@ import { WebSocketServer, WebSocket } from 'ws'
 import * as Y from 'yjs'
 import { supabase } from './db/supabase.js'
 import { processAICommand } from './aiHandler.js'
+import {
+  isOriginAllowed,
+  getCorsOrigin,
+  isMessageSizeValid,
+  canAddObject,
+  isValidRoomName,
+  isAIMessageValid,
+  MAX_WS_MESSAGE_SIZE,
+  MAX_OBJECTS_PER_BOARD,
+} from './security.js'
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
 const PORT = parseInt(process.env.PORT ?? '1234', 10)
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS ?? ''
 const MSG_YJS = 0
 const SNAPSHOT_INTERVAL_MS = 30_000 // 30 seconds
 
@@ -116,6 +127,36 @@ async function saveDocToSupabase(room: string, doc: Y.Doc): Promise<void> {
 }
 
 /**
+ * Register a Y.Doc 'update' listener that broadcasts server-side mutations
+ * (e.g., from the AI handler) to all connected WebSocket clients in the room.
+ *
+ * Client-originated updates (origin === 'remote') are already relayed in the
+ * ws.on('message') handler, so we skip those here to avoid double-sending.
+ */
+function registerDocUpdateListener(room: string, doc: Y.Doc): void {
+  doc.on('update', (update: Uint8Array, origin: unknown) => {
+    // Only broadcast server-side (local) mutations — not client relays
+    if (origin === 'remote') return
+
+    const msg = new Uint8Array(1 + update.length)
+    msg[0] = MSG_YJS
+    msg.set(update, 1)
+
+    let sent = 0
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN && socketRooms.get(client) === room) {
+        client.send(msg)
+        sent++
+      }
+    }
+
+    if (sent > 0) {
+      console.log(`[WS] Broadcast server-side update to ${sent} client(s) in room: ${room}`)
+    }
+  })
+}
+
+/**
  * Get or create a Y.Doc for a room. Loads from Supabase on first access.
  * Uses a loading lock to prevent duplicate loads for the same room.
  */
@@ -134,6 +175,8 @@ async function getOrCreateDoc(room: string): Promise<Y.Doc> {
   const loadPromise = loadDocFromSupabase(room).then((doc) => {
     docs.set(room, doc)
     loadingDocs.delete(room)
+    // Register listener to broadcast server-side mutations to WS clients
+    registerDocUpdateListener(room, doc)
     return doc
   })
   loadingDocs.set(room, loadPromise)
@@ -176,10 +219,23 @@ function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 const server = http.createServer(async (req, res) => {
-  // CORS headers for all responses
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  // CORS — restrict to allowed origins when configured
+  const origin = req.headers.origin
+  const corsOrigin = getCorsOrigin(origin, ALLOWED_ORIGINS)
+
+  if (!corsOrigin) {
+    // Origin not allowed
+    res.writeHead(403, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ error: 'Origin not allowed' }))
+    return
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (corsOrigin !== '*') {
+    res.setHeader('Vary', 'Origin')
+  }
 
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -204,9 +260,9 @@ const server = http.createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req))
       const { message, boardId } = body
 
-      if (!message || typeof message !== 'string') {
+      if (!isAIMessageValid(message)) {
         res.writeHead(400, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Missing "message" field' }))
+        res.end(JSON.stringify({ error: 'Invalid message: must be 1-2000 characters' }))
         return
       }
 
@@ -244,6 +300,22 @@ const wss = new WebSocketServer({ server })
 
 wss.on('connection', async (ws, req) => {
   const room = req.url?.slice(1) || 'default'
+
+  // Validate room name
+  if (!isValidRoomName(room)) {
+    console.warn(`[WS] Rejected connection — invalid room name: "${room}"`)
+    ws.close(1008, 'Invalid room name')
+    return
+  }
+
+  // Validate origin (if ALLOWED_ORIGINS is set)
+  const wsOrigin = req.headers.origin
+  if (!isOriginAllowed(wsOrigin, ALLOWED_ORIGINS)) {
+    console.warn(`[WS] Rejected connection — origin not allowed: ${wsOrigin}`)
+    ws.close(1008, 'Origin not allowed')
+    return
+  }
+
   console.log(`[WS] New connection to room: ${room}`)
 
   socketRooms.set(ws, room)
@@ -259,6 +331,12 @@ wss.on('connection', async (ws, req) => {
       const data = new Uint8Array(raw)
       if (data.length < 2) return
 
+      // Reject oversized messages
+      if (!isMessageSizeValid(data)) {
+        console.warn(`[WS] Rejected message from room ${room}: ${data.byteLength} bytes exceeds ${MAX_WS_MESSAGE_SIZE}`)
+        return
+      }
+
       if (!docReady) {
         pendingMessages.push(data)
         return
@@ -269,8 +347,17 @@ wss.on('connection', async (ws, req) => {
 
       // Apply Yjs updates to the server-side doc (keeps state for new clients)
       if (msgType === MSG_YJS) {
+        // Check object count before applying
+        const objectsMap = doc.getMap('objects')
+        const countBefore = objectsMap.size
+
         Y.applyUpdate(doc, payload, 'remote')
         dirtyRooms.add(room)
+
+        // If update pushed past the object limit, log a warning
+        if (!canAddObject(countBefore) && objectsMap.size > countBefore) {
+          console.warn(`[WS] Room ${room} has ${objectsMap.size} objects — exceeds limit of ${MAX_OBJECTS_PER_BOARD}`)
+        }
       }
 
       // Broadcast to all other clients in the same room

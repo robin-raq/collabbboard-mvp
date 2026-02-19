@@ -16,6 +16,7 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import * as Y from 'yjs'
+import { parseCommand } from './localParser.js'
 
 // ---------------------------------------------------------------------------
 // Types (mirror client/src/types.ts)
@@ -41,10 +42,17 @@ interface BoardObject {
 }
 
 // ---------------------------------------------------------------------------
-// Anthropic Client
+// Anthropic Client (conditional — null when API key is not set)
 // ---------------------------------------------------------------------------
 
-const anthropic = new Anthropic()
+const apiKey = process.env.ANTHROPIC_API_KEY
+const anthropic = apiKey ? new Anthropic({ apiKey }) : null
+
+if (!anthropic) {
+  console.log('[AI] No ANTHROPIC_API_KEY — using local command parser (fallback mode)')
+} else {
+  console.log('[AI] Anthropic API key configured — using Claude for AI commands')
+}
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -325,6 +333,13 @@ export async function processAICommand(
   userMessage: string,
   doc: Y.Doc
 ): Promise<AIResponse> {
+  // Fallback: use local parser when Anthropic API is not available
+  if (!anthropic) {
+    console.log('[AI] Using local parser for command:', userMessage.slice(0, 80))
+    return parseCommand(userMessage, doc)
+  }
+
+  // Full Claude-powered path
   const objectsMap = doc.getMap('objects') as Y.Map<BoardObject>
   const boardContext = buildBoardContext(objectsMap)
   const actions: ToolAction[] = []

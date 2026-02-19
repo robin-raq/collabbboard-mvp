@@ -8,6 +8,14 @@
 
 Never write implementation code before its corresponding tests. If you catch yourself writing code first, stop and write the tests.
 
+## Commit Often, Test Before Push
+**Commit in small, manageable chunks** so reverting is easy if anything breaks.
+- Commit each logical unit of work separately (e.g., tests, implementation, config changes)
+- **Always test features locally first** — demo the working feature before pushing
+- **Ask the user before pushing to production** — never push without explicit approval
+- **Verify production works** after deploying before moving to the next feature
+- Workflow: Code → Test locally → Demo to user → Get push approval → Deploy → Verify prod → Next feature
+
 ## Testing
 - Server tests: `cd server && npm test` (Vitest)
 - Client tests: `cd client && npm test` (Vitest + jsdom)
