@@ -45,7 +45,7 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hi! I can help you work with the board. Try commands like:\n\n• "Add a yellow sticky note that says User Research"\n• "Create a blue rectangle at position 100, 200"\n• "Create a 2x3 grid of sticky notes for pros and cons"\n• "Set up a retrospective board"',
+      content: 'Hi! I can help you work with the board. Try commands like:\n\n\u2022 "Add a yellow sticky note that says User Research"\n\u2022 "Create a blue rectangle at position 100, 200"\n\u2022 "Create a 2x3 grid of sticky notes for pros and cons"\n\u2022 "Set up a retrospective board"',
     },
   ])
   const [input, setInput] = useState('')
@@ -124,14 +124,14 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
     <div style={panelStyle}>
       {/* Header */}
       <div style={headerStyle}>
-        <span style={{ fontSize: 16, fontWeight: 600 }}>AI Assistant</span>
-        <button onClick={onClose} style={closeBtnStyle} title="Close">
+        <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em' }}>AI Assistant</span>
+        <button onClick={onClose} style={closeBtnStyle} title="Close" aria-label="Close AI Assistant">
           &times;
         </button>
       </div>
 
       {/* Messages */}
-      <div style={messagesContainerStyle}>
+      <div style={messagesContainerStyle} role="log" aria-live="polite" aria-label="Chat messages">
         {messages.map((msg) => (
           <div key={msg.id} style={msg.role === 'user' ? userBubbleStyle : assistantBubbleStyle}>
             <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>
@@ -150,7 +150,7 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
         ))}
         {loading && (
           <div style={assistantBubbleStyle}>
-            <div style={spinnerStyle}>
+            <div style={spinnerStyle} aria-label="Loading\u2026">
               <span style={dotStyle}>&#9679;</span>
               <span style={{ ...dotStyle, animationDelay: '0.2s' }}>&#9679;</span>
               <span style={{ ...dotStyle, animationDelay: '0.4s' }}>&#9679;</span>
@@ -167,7 +167,8 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask the AI to create or modify objects..."
+          placeholder="Ask the AI to create or modify objects\u2026"
+          aria-label="AI command input"
           style={textareaStyle}
           rows={2}
           disabled={loading}
@@ -175,6 +176,7 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
         <button
           onClick={sendMessage}
           disabled={loading || !input.trim()}
+          aria-label="Send message"
           style={{
             ...sendBtnStyle,
             opacity: loading || !input.trim() ? 0.5 : 1,
@@ -223,17 +225,18 @@ const panelStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   zIndex: 100,
-  boxShadow: '-4px 0 16px rgba(0,0,0,0.08)',
-  fontFamily: 'system-ui, -apple-system, sans-serif',
+  boxShadow: '-4px 0 20px rgba(0,0,0,0.1)',
+  fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
 }
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'space-between',
-  padding: '12px 16px',
-  borderBottom: '1px solid #e5e7eb',
-  background: '#f9fafb',
+  padding: '14px 16px',
+  borderBottom: 'none',
+  background: '#1E293B',
+  color: '#fff',
 }
 
 const closeBtnStyle: React.CSSProperties = {
@@ -241,14 +244,16 @@ const closeBtnStyle: React.CSSProperties = {
   border: 'none',
   fontSize: 22,
   cursor: 'pointer',
-  color: '#6b7280',
+  color: 'rgba(255,255,255,0.7)',
   padding: '0 4px',
   lineHeight: 1,
+  transition: 'color 0.15s',
 }
 
 const messagesContainerStyle: React.CSSProperties = {
   flex: 1,
   overflowY: 'auto',
+  overscrollBehavior: 'contain',
   padding: '12px 16px',
   display: 'flex',
   flexDirection: 'column',
@@ -265,7 +270,7 @@ const bubbleBase: React.CSSProperties = {
 const userBubbleStyle: React.CSSProperties = {
   ...bubbleBase,
   alignSelf: 'flex-end',
-  background: '#3B82F6',
+  background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
   color: '#fff',
 }
 
@@ -286,10 +291,10 @@ const actionsContainerStyle: React.CSSProperties = {
 const actionBadgeStyle: React.CSSProperties = {
   display: 'inline-block',
   padding: '2px 8px',
-  background: 'rgba(0,0,0,0.06)',
+  background: 'rgba(255,255,255,0.2)',
   borderRadius: 6,
   fontSize: 11,
-  color: '#4b5563',
+  color: 'rgba(255,255,255,0.85)',
 }
 
 const inputContainerStyle: React.CSSProperties = {
@@ -308,13 +313,13 @@ const textareaStyle: React.CSSProperties = {
   padding: '8px 12px',
   fontSize: 13,
   fontFamily: 'inherit',
-  outline: 'none',
   lineHeight: 1.4,
+  transition: 'border-color 0.15s, box-shadow 0.15s',
 }
 
 const sendBtnStyle: React.CSSProperties = {
   padding: '8px 16px',
-  background: '#3B82F6',
+  background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,
@@ -322,6 +327,7 @@ const sendBtnStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   whiteSpace: 'nowrap',
+  transition: 'opacity 0.15s, transform 0.1s',
 }
 
 const spinnerStyle: React.CSSProperties = {

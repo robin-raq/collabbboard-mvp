@@ -466,8 +466,10 @@ export default function Board({ userName }: BoardProps) {
               background: activeTool === tool.type ? '#EBF5FF' : 'transparent',
               color: activeTool === tool.type ? '#2563EB' : '#64748B',
               border: activeTool === tool.type ? '1px solid #BFDBFE' : '1px solid transparent',
+              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
             }}
             title={`${tool.label} (${tool.shortcut})`}
+            aria-label={`${tool.label} tool`}
           >
             <span style={{ fontSize: 18, lineHeight: '1' }}>{tool.icon}</span>
             <span style={{ fontSize: 9, marginTop: 2 }}>{tool.shortcut}</span>
@@ -490,6 +492,7 @@ export default function Board({ userName }: BoardProps) {
             color: hasSelection ? '#EF4444' : '#d1d5db',
           }}
           title="Delete (Del)"
+          aria-label="Delete selected objects"
           disabled={!hasSelection}
         >
           <span style={{ fontSize: 16 }}>&#128465;</span>
@@ -505,6 +508,7 @@ export default function Board({ userName }: BoardProps) {
             color: hasSelection ? '#374151' : '#d1d5db',
           }}
           title="Color"
+          aria-label="Change color"
           disabled={!hasSelection}
         >
           <span
@@ -538,6 +542,7 @@ export default function Board({ userName }: BoardProps) {
                 padding: 0,
               }}
               title={color}
+              aria-label={`Set color to ${color}`}
             />
           ))}
         </div>
@@ -622,7 +627,7 @@ export default function Board({ userName }: BoardProps) {
           padding: '4px 12px',
           borderRadius: 12,
           fontSize: 12,
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily: "'DM Sans', system-ui, sans-serif",
           fontWeight: 600,
         }}>
           {selectedIds.size} selected
@@ -642,7 +647,7 @@ export default function Board({ userName }: BoardProps) {
           padding: '6px 16px',
           borderRadius: 8,
           fontSize: 12,
-          fontFamily: 'system-ui, sans-serif',
+          fontFamily: "'DM Sans', system-ui, sans-serif",
         }}>
           {lineStart
             ? `Click to set endpoint (or click a shape to connect) \u2014 ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`
@@ -652,11 +657,11 @@ export default function Board({ userName }: BoardProps) {
 
       {/* Zoom controls (bottom right) */}
       <div style={zoomControlsStyle}>
-        <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out">&minus;</button>
-        <button onClick={zoomReset} style={{ ...zoomBtnStyle, fontSize: 11, minWidth: 48 }}>
+        <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out" aria-label="Zoom out">&minus;</button>
+        <button onClick={zoomReset} style={{ ...zoomBtnStyle, fontSize: 11, minWidth: 48 }} aria-label={`Reset zoom, currently ${Math.round(scale * 100)}%`}>
           {Math.round(scale * 100)}%
         </button>
-        <button onClick={zoomIn} style={zoomBtnStyle} title="Zoom In">+</button>
+        <button onClick={zoomIn} style={zoomBtnStyle} title="Zoom In" aria-label="Zoom in">+</button>
       </div>
 
       {/* Canvas */}
@@ -760,6 +765,7 @@ export default function Board({ userName }: BoardProps) {
           onClick={() => setShowChat(true)}
           style={chatToggleBtnStyle}
           title="Open AI Assistant"
+          aria-label="Open AI Assistant"
         >
           AI
         </button>
@@ -842,7 +848,7 @@ const toolBtnStyle: React.CSSProperties = {
   borderRadius: 8,
   cursor: 'pointer',
   padding: 0,
-  fontFamily: 'system-ui, sans-serif',
+  fontFamily: "'DM Sans', system-ui, sans-serif",
 }
 
 const presenceStyle: React.CSSProperties = {
@@ -886,7 +892,7 @@ const zoomBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontSize: 16,
   color: '#374151',
-  fontFamily: 'system-ui, sans-serif',
+  fontFamily: "'DM Sans', system-ui, sans-serif",
 }
 
 const colorPickerStyle: React.CSSProperties = {
@@ -912,7 +918,7 @@ const chatToggleBtnStyle: React.CSSProperties = {
   width: 48,
   height: 48,
   borderRadius: '50%',
-  background: '#3B82F6',
+  background: 'linear-gradient(135deg, #3B82F6, #2563EB)',
   color: '#fff',
   border: 'none',
   cursor: 'pointer',
@@ -923,5 +929,7 @@ const chatToggleBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  fontFamily: 'system-ui, sans-serif',
+  fontFamily: "'DM Sans', system-ui, sans-serif",
+  transition: 'transform 0.2s, box-shadow 0.2s',
+  animation: 'ai-pulse 2s ease-in-out 3',
 }

@@ -50,9 +50,33 @@ export default function App() {
             justifyContent: 'center',
             height: '100vh',
             background: '#f8fafc',
-            gap: 16,
+            gap: 20,
+            fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
           }}
         >
+          <div style={{ textAlign: 'center', marginBottom: 8 }}>
+            <h1
+              style={{
+                fontSize: 28,
+                fontWeight: 700,
+                color: '#1E293B',
+                margin: 0,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              CollabBoard
+            </h1>
+            <p
+              style={{
+                fontSize: 14,
+                color: '#64748B',
+                margin: '6px 0 0',
+                fontWeight: 400,
+              }}
+            >
+              Real-time collaborative whiteboard
+            </p>
+          </div>
           <SignIn routing="hash" />
           <button
             onClick={() => setIsGuest(true)}
@@ -64,7 +88,8 @@ export default function App() {
               fontSize: 14,
               color: '#6b7280',
               cursor: 'pointer',
-              fontFamily: 'system-ui, sans-serif',
+              fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
+              transition: 'border-color 0.15s, color 0.15s',
             }}
           >
             Continue as Guest
