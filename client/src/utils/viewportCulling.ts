@@ -63,15 +63,62 @@ export function isObjectVisible(
 /**
  * Filter an array of objects to only those visible in the viewport.
  *
- * @param objects   All board objects
- * @param viewport  Current viewport state
- * @param padding   Extra padding around viewport bounds (world coords)
- * @returns         Only the objects that overlap the visible area
+ * When `maxRendered` > 0 and the visible count exceeds the budget,
+ * objects are sorted by distance to viewport center and only the
+ * closest `maxRendered` are returned. This keeps Konva draw calls
+ * bounded even when zoomed out to see all 500+ objects.
+ *
+ * Selected objects are always included regardless of budget — they
+ * must remain visible so the user can interact with their selection.
+ *
+ * @param objects       All board objects
+ * @param viewport      Current viewport state
+ * @param padding       Extra padding around viewport bounds (world coords)
+ * @param maxRendered   Maximum objects to render (0 = unlimited)
+ * @param selectedIds   IDs of selected objects (always included)
+ * @returns             Only the objects that overlap the visible area (capped)
  */
 export function cullObjects(
   objects: BoardObject[],
   viewport: Viewport,
   padding = 50,
+  maxRendered = 0,
+  selectedIds?: Set<string>,
 ): BoardObject[] {
-  return objects.filter((obj) => isObjectVisible(obj, viewport, padding))
+  const visible = objects.filter((obj) => isObjectVisible(obj, viewport, padding))
+
+  // No budget or within budget — return as-is
+  if (maxRendered <= 0 || visible.length <= maxRendered) return visible
+
+  // Compute viewport center in world coordinates
+  const bounds = getVisibleBounds(viewport)
+  const cx = (bounds.left + bounds.right) / 2
+  const cy = (bounds.top + bounds.bottom) / 2
+
+  // Partition: selected objects are always included
+  const selected: BoardObject[] = []
+  const unselected: BoardObject[] = []
+  for (const obj of visible) {
+    if (selectedIds && selectedIds.has(obj.id)) {
+      selected.push(obj)
+    } else {
+      unselected.push(obj)
+    }
+  }
+
+  // Budget remaining after reserving slots for selected objects
+  const remaining = Math.max(0, maxRendered - selected.length)
+
+  // Sort unselected by squared distance to viewport center (closest first)
+  unselected.sort((a, b) => {
+    const aCx = a.x + a.width / 2
+    const aCy = a.y + a.height / 2
+    const bCx = b.x + b.width / 2
+    const bCy = b.y + b.height / 2
+    const aDist = (aCx - cx) ** 2 + (aCy - cy) ** 2
+    const bDist = (bCx - cx) ** 2 + (bCy - cy) ** 2
+    return aDist - bDist
+  })
+
+  return [...selected, ...unselected.slice(0, remaining)]
 }

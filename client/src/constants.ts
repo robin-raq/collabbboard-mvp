@@ -39,6 +39,14 @@ export const ZOOM_STEP = 1.2 // For zoom button clicks (coarser than scroll)
 export const GRID_SIZE = 20
 
 // ---------------------------------------------------------------------------
+// Render Budget — max Konva shapes drawn per frame
+// ---------------------------------------------------------------------------
+
+/** Maximum objects rendered when zoomed out. Keeps frame time <50ms.
+ *  Objects beyond this cap are culled; closest to viewport center kept. */
+export const MAX_RENDERED_OBJECTS = 150
+
+// ---------------------------------------------------------------------------
 // Shape Defaults (used when clicking canvas to create a shape)
 // ---------------------------------------------------------------------------
 

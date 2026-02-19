@@ -16,9 +16,11 @@ interface Props {
   onUpdate: (id: string, updates: Partial<BoardObject>) => void
   stageRef: React.RefObject<Konva.Stage | null>
   scale: number
-  stagePos: { x: number; y: number }
-  // Multi-select group drag support
-  selectedIds?: Set<string>
+  // Primitives survive React.memo shallow comparison (unlike objects/Sets)
+  stagePosX: number
+  stagePosY: number
+  // Multi-select group drag support — boolean primitive instead of Set<string>
+  isMultiSelected?: boolean
   onGroupDragEnd?: (draggedId: string, dx: number, dy: number) => void
 }
 
@@ -35,8 +37,8 @@ interface Props {
  *  - Enter = save, Shift+Enter = newline, Esc = cancel, blur = save
  */
 const BoardShape = memo(function BoardShape({
-  obj, isSelected, onSelect, onUpdate, stageRef, scale, stagePos,
-  selectedIds, onGroupDragEnd,
+  obj, isSelected, onSelect, onUpdate, stageRef, scale,
+  stagePosX, stagePosY, isMultiSelected, onGroupDragEnd,
 }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(obj.text ?? '')
@@ -96,7 +98,7 @@ const BoardShape = memo(function BoardShape({
     const newY = newCenterY - displayH / 2
 
     // Calculate delta for group drag
-    if (dragStartPosRef.current && onGroupDragEnd && selectedIds && selectedIds.size > 1 && selectedIds.has(obj.id)) {
+    if (dragStartPosRef.current && onGroupDragEnd && isMultiSelected) {
       const dx = newCenterX - dragStartPosRef.current.x
       const dy = newCenterY - dragStartPosRef.current.y
       onGroupDragEnd(obj.id, dx, dy)
@@ -104,7 +106,7 @@ const BoardShape = memo(function BoardShape({
     dragStartPosRef.current = null
 
     onUpdate(obj.id, { x: newX, y: newY })
-  }, [obj.id, onUpdate, displayW, displayH, onGroupDragEnd, selectedIds])
+  }, [obj.id, onUpdate, displayW, displayH, onGroupDragEnd, isMultiSelected])
 
   // ---- Select -------------------------------------------------------------
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -123,8 +125,8 @@ const BoardShape = memo(function BoardShape({
     const stage = stageRef.current
     if (!stage) return
 
-    const screenX = obj.x * scale + stagePos.x
-    const screenY = obj.y * scale + stagePos.y
+    const screenX = obj.x * scale + stagePosX
+    const screenY = obj.y * scale + stagePosY
     const screenW = obj.width * scale
     const screenH = obj.height * scale
 
@@ -308,8 +310,8 @@ const BoardShape = memo(function BoardShape({
     const centerY = obj.y + displayH / 2
 
     // Convert screen pointer to world coords
-    const worldX = (pointer.x - stagePos.x) / scale
-    const worldY = (pointer.y - stagePos.y) / scale
+    const worldX = (pointer.x - stagePosX) / scale
+    const worldY = (pointer.y - stagePosY) / scale
 
     const angle = calcAngle(worldX, worldY, centerX, centerY)
     setLiveRotation(angle)
@@ -317,7 +319,7 @@ const BoardShape = memo(function BoardShape({
     // Reset drag node position so it doesn't accumulate offset
     const node = e.target
     node.position({ x: node.x(), y: node.y() })
-  }, [obj.x, obj.y, displayW, displayH, stagePos, scale, stageRef])
+  }, [obj.x, obj.y, displayW, displayH, stagePosX, stagePosY, scale, stageRef])
 
   const handleRotationDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     e.cancelBubble = true

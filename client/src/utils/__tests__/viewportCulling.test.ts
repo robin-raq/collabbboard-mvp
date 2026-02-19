@@ -175,4 +175,80 @@ describe('cullObjects', () => {
     const visible = cullObjects(objects, DEFAULT_VIEWPORT, 0)
     expect(visible).toHaveLength(3)
   })
+
+  // ---- Render budget tests ------------------------------------------------
+
+  it('caps output to maxRendered when more visible objects exceed the budget', () => {
+    // Create 200 objects all inside the viewport
+    const objects: BoardObject[] = []
+    for (let i = 0; i < 200; i++) {
+      objects.push(makeObj(i * 8, i * 4, 50, 50))
+    }
+    // Without budget: all 200 are visible
+    const allVisible = cullObjects(objects, DEFAULT_VIEWPORT, 0)
+    expect(allVisible.length).toBe(200)
+
+    // With budget of 100: capped at 100
+    const capped = cullObjects(objects, DEFAULT_VIEWPORT, 0, 100)
+    expect(capped.length).toBe(100)
+  })
+
+  it('does not cap when visible count is within budget', () => {
+    const objects = [
+      makeObj(100, 100, 50, 50),
+      makeObj(200, 200, 50, 50),
+      makeObj(300, 300, 50, 50),
+    ]
+    // Budget of 100 should not affect 3 objects
+    const visible = cullObjects(objects, DEFAULT_VIEWPORT, 0, 100)
+    expect(visible).toHaveLength(3)
+  })
+
+  it('prioritizes objects closest to viewport center when budget exceeded', () => {
+    // Viewport center at 1x zoom with no pan: (960, 540)
+    const objects: BoardObject[] = [
+      makeObj(0, 0, 50, 50),        // far from center — top-left corner
+      makeObj(935, 515, 50, 50),     // very close to center (960,540)
+      makeObj(1800, 1000, 50, 50),   // far from center — bottom-right
+    ]
+    // Budget of 1: should keep the one closest to center
+    const capped = cullObjects(objects, DEFAULT_VIEWPORT, 0, 1)
+    expect(capped).toHaveLength(1)
+    expect(capped[0].x).toBe(935) // the center object
+  })
+
+  it('returns no more than maxRendered even with padding', () => {
+    const objects: BoardObject[] = []
+    for (let i = 0; i < 300; i++) {
+      objects.push(makeObj(i * 5, i * 3, 50, 50))
+    }
+    const capped = cullObjects(objects, DEFAULT_VIEWPORT, 50, 150)
+    expect(capped.length).toBeLessThanOrEqual(150)
+  })
+
+  it('ignores budget when maxRendered is 0 (unlimited)', () => {
+    const objects: BoardObject[] = []
+    for (let i = 0; i < 200; i++) {
+      objects.push(makeObj(i * 8, i * 4, 50, 50))
+    }
+    // maxRendered = 0 means no cap (default behavior)
+    const visible = cullObjects(objects, DEFAULT_VIEWPORT, 0, 0)
+    expect(visible.length).toBe(200)
+  })
+
+  it('always includes selected objects even when they exceed the budget distance', () => {
+    // 3 objects: one far from center but selected, two close to center
+    const farObj = makeObj(0, 0, 50, 50) // far from viewport center (960,540)
+    const closeObj1 = makeObj(935, 515, 50, 50) // very close to center
+    const closeObj2 = makeObj(900, 500, 50, 50) // close to center
+    const objects = [farObj, closeObj1, closeObj2]
+
+    const selectedIds = new Set([farObj.id])
+
+    // Budget of 2: the far object should still be included because it's selected
+    const capped = cullObjects(objects, DEFAULT_VIEWPORT, 0, 2, selectedIds)
+    expect(capped).toHaveLength(2)
+    // The selected object must be in the result
+    expect(capped.some((o) => o.id === farObj.id)).toBe(true)
+  })
 })
