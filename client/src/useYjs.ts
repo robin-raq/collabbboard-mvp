@@ -36,7 +36,29 @@ import { throttle } from './utils/throttle'
 // Constants
 // ---------------------------------------------------------------------------
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:1234'
+/**
+ * Derive the WebSocket URL:
+ * 1. Explicit env var wins (VITE_WS_URL)
+ * 2. In production, derive from VITE_API_URL or known production host
+ * 3. Fallback to localhost for dev
+ */
+function getWsUrl(): string {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
+  if (import.meta.env.VITE_API_URL) {
+    // Convert https://foo.com → wss://foo.com
+    return import.meta.env.VITE_API_URL
+      .replace(/^https:/, 'wss:')
+      .replace(/^http:/, 'ws:')
+  }
+  // Auto-detect: if served from a non-localhost origin, use same-origin WS
+  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//raqdrobinson.com`
+  }
+  return 'ws://localhost:1234'
+}
+
+const WS_URL = getWsUrl()
 const MSG_YJS = 0       // Yjs document update
 const MSG_AWARENESS = 1 // Cursor / presence info
 const REMOTE = 'remote' // Origin tag to prevent echo loops

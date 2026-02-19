@@ -34,7 +34,21 @@ interface ChatPanelProps {
 // Config
 // ---------------------------------------------------------------------------
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:1234'
+/**
+ * Derive the API URL:
+ * 1. Explicit env var wins (VITE_API_URL)
+ * 2. Auto-detect production from window.location
+ * 3. Fallback to localhost for dev
+ */
+function getApiUrl(): string {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
+    return 'https://raqdrobinson.com'
+  }
+  return 'http://localhost:1234'
+}
+
+const API_URL = getApiUrl()
 
 // ---------------------------------------------------------------------------
 // Component
