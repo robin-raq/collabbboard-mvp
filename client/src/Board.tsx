@@ -1,16 +1,20 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { Stage, Layer, Rect as KonvaRect, Text as KonvaText, Line } from 'react-konva'
+import { Stage, Layer, Rect as KonvaRect } from 'react-konva'
 import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import BoardShape from './BoardShape'
 import Connector from './Connector'
 import ChatPanel from './components/ChatPanel'
+import Toolbar from './components/Toolbar'
+import ColorPicker from './components/ColorPicker'
+import PresenceBar from './components/PresenceBar'
+import ZoomControls from './components/ZoomControls'
+import CursorBadge from './components/CursorBadge'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
 import {
   USER_COLORS,
-  SHAPE_COLORS,
   ZOOM_SCALE_FACTOR,
   ZOOM_MIN,
   ZOOM_MAX,
@@ -18,6 +22,7 @@ import {
   GRID_SIZE,
   SHAPE_DEFAULTS,
   LINE_COLOR,
+  MAX_RENDERED_OBJECTS,
 } from './constants'
 
 const DEBUG = import.meta.env.DEV
@@ -74,10 +79,10 @@ export default function Board({ userName }: BoardProps) {
   )
 
   const visibleObjects = useMemo(() => {
-    const culled = cullObjects(objects, viewport)
+    const culled = cullObjects(objects, viewport, 50, MAX_RENDERED_OBJECTS, selectedIds)
     if (DEBUG) console.log(`[CULL] ${culled.length}/${objects.length} objects visible`)
     return culled
-  }, [objects, viewport])
+  }, [objects, viewport, selectedIds])
 
   // Get selected object for color picker / context
   const selectedObj = useMemo(
@@ -283,7 +288,7 @@ export default function Board({ userName }: BoardProps) {
           y: minY,
           width: Math.abs(center.x - lineStart.x) || 1,
           height: Math.abs(center.y - lineStart.y) || 1,
-          fill: '#374151',
+          fill: LINE_COLOR,
           points: [
             lineStart.x - minX, lineStart.y - minY,
             center.x - minX, center.y - minY,
@@ -413,24 +418,22 @@ export default function Board({ userName }: BoardProps) {
     [selectedIds, updateObject],
   )
 
+  // ---- Toolbar callbacks --------------------------------------------------
+  const handleDelete = useCallback(() => {
+    for (const id of selectedIds) deleteObject(id)
+    setSelectedIds(new Set())
+  }, [selectedIds, deleteObject])
+
+  const handleColorToggle = useCallback(() => {
+    setShowColorPicker((prev) => !prev)
+  }, [])
+
   // ---- Multi-select bounding box ------------------------------------------
   const selectionBounds = useMemo(() => {
     if (selectedIds.size <= 1) return null
     const selected = objects.filter((o) => selectedIds.has(o.id))
     return getSelectionBounds(selected)
   }, [selectedIds, objects])
-
-  // ---- Toolbar data -------------------------------------------------------
-  const tools: Array<{ type: ToolType; label: string; icon: string; shortcut: string }> = [
-    { type: 'select', label: 'Select', icon: '\u2196', shortcut: 'V' },
-    { type: 'sticky', label: 'Sticky', icon: '\u2610', shortcut: 'S' },
-    { type: 'rect', label: 'Rect', icon: '\u25AC', shortcut: 'R' },
-    { type: 'circle', label: 'Circle', icon: '\u25CF', shortcut: 'C' },
-    { type: 'text', label: 'Text', icon: 'T', shortcut: 'T' },
-    { type: 'frame', label: 'Frame', icon: '\u229E', shortcut: 'F' },
-    { type: 'line', label: 'Line', icon: '\u2014', shortcut: 'L' },
-    { type: 'arrow', label: 'Arrow', icon: '\u2192', shortcut: 'A' },
-  ]
 
   const hasSelection = selectedIds.size > 0
 
@@ -449,163 +452,30 @@ export default function Board({ userName }: BoardProps) {
       />
 
       {/* Left vertical toolbar */}
-      <div style={toolbarStyle}>
-        {tools.map((tool) => (
-          <button
-            key={tool.type}
-            onClick={() => setActiveTool(tool.type)}
-            style={{
-              ...toolBtnStyle,
-              background: activeTool === tool.type ? '#EBF5FF' : 'transparent',
-              color: activeTool === tool.type ? '#2563EB' : '#64748B',
-              border: activeTool === tool.type ? '1px solid #BFDBFE' : '1px solid transparent',
-              transition: 'background 0.15s, color 0.15s, border-color 0.15s',
-            }}
-            title={`${tool.label} (${tool.shortcut})`}
-            aria-label={`${tool.label} tool`}
-          >
-            <span style={{ fontSize: 18, lineHeight: '1' }}>{tool.icon}</span>
-            <span style={{ fontSize: 9, marginTop: 2 }}>{tool.shortcut}</span>
-          </button>
-        ))}
-
-        {/* Divider */}
-        <div style={{ width: '70%', height: 1, background: '#e5e7eb', margin: '4px auto' }} />
-
-        {/* Delete button */}
-        <button
-          onClick={() => {
-            if (hasSelection) {
-              for (const id of selectedIds) deleteObject(id)
-              setSelectedIds(new Set())
-            }
-          }}
-          style={{
-            ...toolBtnStyle,
-            color: hasSelection ? '#EF4444' : '#d1d5db',
-          }}
-          title="Delete (Del)"
-          aria-label="Delete selected objects"
-          disabled={!hasSelection}
-        >
-          <span style={{ fontSize: 16 }}>&#128465;</span>
-          <span style={{ fontSize: 9, marginTop: 2 }}>Del</span>
-        </button>
-
-        {/* Color button */}
-        <button
-          onClick={() => setShowColorPicker(!showColorPicker)}
-          style={{
-            ...toolBtnStyle,
-            position: 'relative',
-            color: hasSelection ? '#374151' : '#d1d5db',
-          }}
-          title="Color"
-          aria-label="Change color"
-          disabled={!hasSelection}
-        >
-          <span
-            style={{
-              width: 18,
-              height: 18,
-              borderRadius: 4,
-              background: selectedObj?.fill || '#ccc',
-              border: '2px solid #e5e7eb',
-              display: 'block',
-            }}
-          />
-          <span style={{ fontSize: 9, marginTop: 2 }}>Color</span>
-        </button>
-      </div>
+      <Toolbar
+        activeTool={activeTool}
+        onToolChange={setActiveTool}
+        hasSelection={hasSelection}
+        onDelete={handleDelete}
+        onColorToggle={handleColorToggle}
+        selectedFill={selectedObj?.fill ?? null}
+      />
 
       {/* Color picker popup */}
       {showColorPicker && hasSelection && (
-        <div style={colorPickerStyle}>
-          {SHAPE_COLORS.map((color) => (
-            <button
-              key={color}
-              onClick={() => handleColorChange(color)}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                background: color,
-                border: selectedObj?.fill === color ? '2px solid #2563EB' : '2px solid #e5e7eb',
-                cursor: 'pointer',
-                padding: 0,
-              }}
-              title={color}
-              aria-label={`Set color to ${color}`}
-            />
-          ))}
-        </div>
+        <ColorPicker
+          currentFill={selectedObj?.fill ?? null}
+          onColorChange={handleColorChange}
+        />
       )}
 
       {/* Presence bar (top right) */}
-      <div style={presenceStyle}>
-        <span
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: connected ? '#22c55e' : '#ef4444',
-            display: 'inline-block',
-            flexShrink: 0,
-          }}
-        />
-        <span style={{ color: '#374151', fontSize: 13 }}>
-          {connected ? 'Connected' : 'Connecting...'}
-        </span>
-        {/* Always show the local user avatar */}
-        <div style={{ width: 1, height: 16, background: '#e5e7eb' }} />
-        <span
-          title={`${userName} (You)`}
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: '50%',
-            background: userColor,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#fff',
-            flexShrink: 0,
-            border: '2px solid #fff',
-            boxShadow: '0 0 0 1px #2563EB',
-          }}
-        >
-          {userName.charAt(0).toUpperCase()}
-        </span>
-        {/* Remote user avatars */}
-        {remoteCursors.slice(0, 5).map((rc) => (
-          <span
-            key={rc.clientId}
-            title={rc.name}
-            style={{
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: rc.color,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#fff',
-              flexShrink: 0,
-            }}
-          >
-            {rc.name.charAt(0).toUpperCase()}
-          </span>
-        ))}
-        {remoteCursors.length > 5 && (
-          <span style={{ fontSize: 11, color: '#6b7280' }}>
-            +{remoteCursors.length - 5}
-          </span>
-        )}
-      </div>
+      <PresenceBar
+        connected={connected}
+        userName={userName}
+        userColor={userColor}
+        remoteCursors={remoteCursors}
+      />
 
       {/* Multi-select count badge */}
       {selectedIds.size > 1 && (
@@ -649,13 +519,7 @@ export default function Board({ userName }: BoardProps) {
       )}
 
       {/* Zoom controls (bottom right) */}
-      <div style={zoomControlsStyle}>
-        <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out" aria-label="Zoom out">&minus;</button>
-        <button onClick={zoomReset} style={{ ...zoomBtnStyle, fontSize: 11, minWidth: 48 }} aria-label={`Reset zoom, currently ${Math.round(scale * 100)}%`}>
-          {Math.round(scale * 100)}%
-        </button>
-        <button onClick={zoomIn} style={zoomBtnStyle} title="Zoom In" aria-label="Zoom in">+</button>
-      </div>
+      <ZoomControls scale={scale} onZoomIn={zoomIn} onZoomOut={zoomOut} onZoomReset={zoomReset} />
 
       {/* Canvas */}
       <Stage
@@ -698,8 +562,9 @@ export default function Board({ userName }: BoardProps) {
                 onUpdate={updateObject}
                 stageRef={stageRef}
                 scale={scale}
-                stagePos={stagePos}
-                selectedIds={selectedIds}
+                stagePosX={stagePos.x}
+                stagePosY={stagePos.y}
+                isMultiSelected={selectedIds.size > 1 && selectedIds.has(obj.id)}
                 onGroupDragEnd={handleGroupDragEnd}
               />
             )
@@ -775,134 +640,7 @@ export default function Board({ userName }: BoardProps) {
   )
 }
 
-// ---- Remote cursor display ------------------------------------------------
-
-function CursorBadge({ x, y, name, color }: { x: number; y: number; name: string; color: string }) {
-  const labelWidth = name.length * 7 + 10
-  return (
-    <>
-      {/* Cursor pointer shape */}
-      <Line
-        points={[x, y, x + 2, y + 12, x + 5, y + 9, x + 10, y + 14, x + 12, y + 12, x + 7, y + 7, x + 11, y + 5, x, y]}
-        fill={color}
-        stroke={color}
-        strokeWidth={1}
-        closed
-      />
-      {/* Name label background */}
-      <KonvaRect
-        x={x + 14}
-        y={y}
-        width={labelWidth}
-        height={18}
-        fill={color}
-        cornerRadius={4}
-      />
-      {/* Name label text */}
-      <KonvaText
-        x={x + 14}
-        y={y}
-        text={name}
-        fontSize={11}
-        fill="#fff"
-        padding={3}
-      />
-    </>
-  )
-}
-
 // ---- Styles ---------------------------------------------------------------
-
-const toolbarStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: '50%',
-  left: 12,
-  transform: 'translateY(-50%)',
-  zIndex: 40,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-  background: '#fff',
-  padding: '8px 6px',
-  borderRadius: 12,
-  boxShadow: '0 2px 12px rgba(0,0,0,0.1)',
-  border: '1px solid #e5e7eb',
-}
-
-const toolBtnStyle: React.CSSProperties = {
-  width: 40,
-  height: 40,
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: 'transparent',
-  border: '1px solid transparent',
-  borderRadius: 8,
-  cursor: 'pointer',
-  padding: 0,
-  fontFamily: "'DM Sans', system-ui, sans-serif",
-}
-
-const presenceStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: 12,
-  right: 12,
-  zIndex: 40,
-  display: 'flex',
-  gap: 8,
-  alignItems: 'center',
-  background: '#fff',
-  padding: '6px 14px',
-  borderRadius: 20,
-  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-  border: '1px solid #e5e7eb',
-}
-
-const zoomControlsStyle: React.CSSProperties = {
-  position: 'absolute',
-  bottom: 16,
-  right: 16,
-  zIndex: 40,
-  display: 'flex',
-  gap: 2,
-  background: '#fff',
-  padding: 4,
-  borderRadius: 10,
-  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-  border: '1px solid #e5e7eb',
-}
-
-const zoomBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: 'transparent',
-  border: 'none',
-  borderRadius: 6,
-  cursor: 'pointer',
-  fontSize: 16,
-  color: '#374151',
-  fontFamily: "'DM Sans', system-ui, sans-serif",
-}
-
-const colorPickerStyle: React.CSSProperties = {
-  position: 'absolute',
-  top: '50%',
-  left: 68,
-  transform: 'translateY(-50%)',
-  zIndex: 50,
-  display: 'grid',
-  gridTemplateColumns: 'repeat(5, 1fr)',
-  gap: 6,
-  background: '#fff',
-  padding: 10,
-  borderRadius: 12,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
-  border: '1px solid #e5e7eb',
-}
 
 const chatToggleBtnStyle: React.CSSProperties = {
   position: 'fixed',
