@@ -75,6 +75,16 @@ export function canAddObject(currentCount: number): boolean {
   return currentCount < MAX_OBJECTS_PER_BOARD
 }
 
+/**
+ * Preemptive check: should we reject an incoming update?
+ * Returns true if the board is already at or over the object limit.
+ * Call this BEFORE applying Y.applyUpdate to prevent exceeding the cap.
+ */
+export function shouldRejectUpdate(doc: import('yjs').Doc): boolean {
+  const objectsMap = doc.getMap('objects')
+  return objectsMap.size >= MAX_OBJECTS_PER_BOARD
+}
+
 // ---------------------------------------------------------------------------
 // Room name validation
 // ---------------------------------------------------------------------------

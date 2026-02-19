@@ -26,11 +26,10 @@ import {
   isOriginAllowed,
   getCorsOrigin,
   isMessageSizeValid,
-  canAddObject,
+  shouldRejectUpdate,
   isValidRoomName,
   isAIMessageValid,
   MAX_WS_MESSAGE_SIZE,
-  MAX_OBJECTS_PER_BOARD,
 } from './security.js'
 
 // ---------------------------------------------------------------------------
@@ -40,7 +39,9 @@ import {
 const PORT = parseInt(process.env.PORT ?? '1234', 10)
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS ?? ''
 const MSG_YJS = 0
-const SNAPSHOT_INTERVAL_MS = 30_000 // 30 seconds
+const SNAPSHOT_INTERVAL_MS = 30_000   // 30 seconds
+const ROOM_IDLE_TIMEOUT_MS = 3_600_000 // 1 hour — evict idle rooms to free memory
+const EVICTION_CHECK_MS = 300_000      // 5 minutes — how often to check for idle rooms
 
 // ---------------------------------------------------------------------------
 // State
@@ -57,6 +58,9 @@ const socketRooms = new Map<WebSocket, string>()
 
 /** Tracks rooms that have been modified since last snapshot. */
 const dirtyRooms = new Set<string>()
+
+/** Last activity timestamp per room (for idle eviction). */
+const roomLastActive = new Map<string, number>()
 
 // ---------------------------------------------------------------------------
 // Supabase Persistence
@@ -175,6 +179,7 @@ async function getOrCreateDoc(room: string): Promise<Y.Doc> {
   const loadPromise = loadDocFromSupabase(room).then((doc) => {
     docs.set(room, doc)
     loadingDocs.delete(room)
+    roomLastActive.set(room, Date.now())
     // Register listener to broadcast server-side mutations to WS clients
     registerDocUpdateListener(room, doc)
     return doc
@@ -317,7 +322,10 @@ const server = http.createServer(async (req, res) => {
 // WebSocket server
 // ---------------------------------------------------------------------------
 
-const wss = new WebSocketServer({ server })
+const wss = new WebSocketServer({
+  server,
+  perMessageDeflate: true, // ~70% compression on Yjs binary payloads
+})
 
 wss.on('connection', async (ws, req) => {
   const room = req.url?.slice(1) || 'default'
@@ -340,6 +348,7 @@ wss.on('connection', async (ws, req) => {
   console.log(`[WS] New connection to room: ${room}`)
 
   socketRooms.set(ws, room)
+  roomLastActive.set(room, Date.now())
 
   // Queue messages that arrive while the doc is loading from Supabase
   const pendingMessages: Uint8Array[] = []
@@ -368,17 +377,15 @@ wss.on('connection', async (ws, req) => {
 
       // Apply Yjs updates to the server-side doc (keeps state for new clients)
       if (msgType === MSG_YJS) {
-        // Check object count before applying
-        const objectsMap = doc.getMap('objects')
-        const countBefore = objectsMap.size
+        // Preemptive check: reject if board is already at the object limit
+        if (shouldRejectUpdate(doc)) {
+          console.warn(`[WS] Rejected update for room ${room}: object limit reached`)
+          return
+        }
 
         Y.applyUpdate(doc, payload, 'remote')
         dirtyRooms.add(room)
-
-        // If update pushed past the object limit, log a warning
-        if (!canAddObject(countBefore) && objectsMap.size > countBefore) {
-          console.warn(`[WS] Room ${room} has ${objectsMap.size} objects — exceeds limit of ${MAX_OBJECTS_PER_BOARD}`)
-        }
+        roomLastActive.set(room, Date.now())
       }
 
       // Broadcast to all other clients in the same room
@@ -433,13 +440,71 @@ wss.on('connection', async (ws, req) => {
 })
 
 // ---------------------------------------------------------------------------
+// Room Eviction — clean up idle rooms to free memory
+// ---------------------------------------------------------------------------
+
+/**
+ * Check all rooms for idle timeout and evict them.
+ * Before evicting, saves dirty docs to Supabase.
+ */
+function evictIdleRooms(): void {
+  const now = Date.now()
+  for (const [room, lastTime] of roomLastActive) {
+    if (now - lastTime > ROOM_IDLE_TIMEOUT_MS) {
+      // Check if any clients are still connected to this room
+      let hasClients = false
+      for (const client of wss.clients) {
+        if (client.readyState === WebSocket.OPEN && socketRooms.get(client) === room) {
+          hasClients = true
+          break
+        }
+      }
+
+      // Don't evict rooms with active connections
+      if (hasClients) {
+        roomLastActive.set(room, now)
+        continue
+      }
+
+      const doc = docs.get(room)
+      if (doc) {
+        // Save before evicting if dirty
+        if (dirtyRooms.has(room)) {
+          dirtyRooms.delete(room)
+          saveDocToSupabase(room, doc).catch((err) => {
+            console.error(`[EVICT] Failed to save room ${room} before eviction:`, err)
+          })
+        }
+        doc.destroy()
+      }
+      docs.delete(room)
+      loadingDocs.delete(room)
+      roomLastActive.delete(room)
+      console.log(`[EVICT] Evicted idle room: ${room}`)
+    }
+  }
+}
+
+/**
+ * Start periodic eviction of idle rooms.
+ */
+function startEvictionInterval(): void {
+  setInterval(() => {
+    if (roomLastActive.size === 0) return
+    evictIdleRooms()
+  }, EVICTION_CHECK_MS)
+}
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
 startSnapshotInterval()
+startEvictionInterval()
 
 server.listen(PORT, () => {
   console.log(`[WS] y-websocket server running on :${PORT}`)
   console.log(`[WS] Persistence: ${supabase ? 'Supabase' : 'DISABLED (no env vars)'}`)
   console.log(`[WS] Snapshot interval: ${SNAPSHOT_INTERVAL_MS / 1000}s`)
+  console.log(`[WS] Room eviction: idle >${ROOM_IDLE_TIMEOUT_MS / 60_000}m, check every ${EVICTION_CHECK_MS / 60_000}m`)
 })
