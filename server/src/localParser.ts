@@ -1,18 +1,30 @@
 /**
  * Local AI Command Parser
  *
- * A regex/keyword-based fallback that handles the 6 required AI commands
+ * A regex/keyword-based fallback that handles all 12 AI commands
  * without calling the Anthropic API. Used when ANTHROPIC_API_KEY is not set.
  *
  * When the API key is available, the full Claude-powered handler is used instead.
  *
- * 6 supported commands:
- *  1. "Add a yellow sticky note that says User Research" → createObject
- *  2. "Create a blue rectangle at position 100, 200" → createObject
- *  3. "Change the sticky note color to green" → updateObject
- *  4. "Create a 2x3 grid of sticky notes for pros and cons" → createObject × N
- *  5. "Arrange these sticky notes in a grid" → moveObject × N
- *  6. "Set up a retrospective board" → createObject × 9+
+ * Creation Commands:
+ *  1. "Add a yellow sticky note that says User Research"
+ *  2. "Create a blue rectangle at position 100, 200"
+ *  7. "Add a frame called 'Sprint Planning'"
+ *
+ * Manipulation Commands:
+ *  3. "Change the sticky note color to green"
+ *  8. "Move all the pink sticky notes to the right side"
+ *  9. "Resize the frame to fit its contents"
+ *
+ * Layout Commands:
+ *  4. "Create a 2x3 grid of sticky notes for pros and cons"
+ *  5. "Arrange these sticky notes in a grid"
+ * 10. "Space these elements evenly"
+ *
+ * Complex/Template Commands:
+ *  6. "Set up a retrospective board"
+ * 11. "Create a SWOT analysis template with four quadrants"
+ * 12. "Build a user journey map with 5 stages"
  */
 
 import * as Y from 'yjs'
@@ -107,6 +119,35 @@ function extractGridDimensions(msg: string): { cols: number; rows: number } | nu
 }
 
 /**
+ * Extract frame name from "called X" or "named X" patterns.
+ */
+function extractFrameName(msg: string): string | null {
+  const namedMatch = msg.match(/(?:called|named|titled)\s+['"]?(.+?)['"]?\s*$/i)
+  if (namedMatch) return namedMatch[1].trim().replace(/["']+$/, '').replace(/^["']+/, '')
+  return null
+}
+
+/**
+ * Extract a direction from the message.
+ */
+function extractDirection(msg: string): 'left' | 'right' | 'top' | 'bottom' | null {
+  const lower = msg.toLowerCase()
+  if (lower.includes('right')) return 'right'
+  if (lower.includes('left')) return 'left'
+  if (lower.includes('top') || lower.includes('upper')) return 'top'
+  if (lower.includes('bottom') || lower.includes('lower')) return 'bottom'
+  return null
+}
+
+/**
+ * Extract stage count from "N stages" pattern.
+ */
+function extractStageCount(msg: string): number {
+  const match = msg.match(/(\d+)\s+stage/i)
+  return match ? parseInt(match[1], 10) : 5 // default 5 stages
+}
+
+/**
  * Detect the object type requested.
  */
 function extractObjectType(msg: string): string {
@@ -164,11 +205,59 @@ function isUpdateColorCommand(msg: string): boolean {
 }
 
 /**
+ * Check if this is a SWOT analysis template command.
+ */
+function isSwotCommand(msg: string): boolean {
+  return msg.toLowerCase().includes('swot')
+}
+
+/**
+ * Check if this is a user journey map command.
+ */
+function isJourneyMapCommand(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('journey') && lower.includes('map')
+}
+
+/**
+ * Check if this is a "move objects by color" command.
+ */
+function isMoveByColorCommand(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('move') && extractColor(msg) !== null && extractDirection(msg) !== null
+}
+
+/**
+ * Check if this is a "resize frame to fit" command.
+ */
+function isResizeFrameCommand(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('resize') && lower.includes('frame') && lower.includes('fit')
+}
+
+/**
+ * Check if this is a "space evenly" command.
+ */
+function isSpaceEvenlyCommand(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('space') && lower.includes('even')
+}
+
+/**
+ * Check if this is a "create frame" command (with name).
+ */
+function isCreateFrameCommand(msg: string): boolean {
+  const lower = msg.toLowerCase()
+  return lower.includes('frame') && (lower.includes('called') || lower.includes('named') || lower.includes('titled')) &&
+    (lower.includes('create') || lower.includes('add') || lower.includes('make'))
+}
+
+/**
  * Check if this is a create object command.
  */
 function isCreateCommand(msg: string): boolean {
   const lower = msg.toLowerCase()
-  return lower.includes('create') || lower.includes('add') || lower.includes('make') || lower.includes('put')
+  return lower.includes('create') || lower.includes('add') || lower.includes('make') || lower.includes('put') || lower.includes('build')
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +471,306 @@ function handleUpdateColor(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Command 7: Create a frame with label
+// ---------------------------------------------------------------------------
+
+function handleCreateFrame(
+  msg: string,
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  const frameName = extractFrameName(msg) || 'Untitled Frame'
+  const position = extractPosition(msg) || { x: 200, y: 100 }
+  const input: Record<string, unknown> = {
+    type: 'frame',
+    x: position.x,
+    y: position.y,
+    width: 400,
+    height: 300,
+    fill: '#E8E8E8',
+    text: frameName,
+  }
+  const result = executeCreateObject(input, objectsMap)
+  return {
+    message: `Created a frame called "${frameName}" at position (${position.x}, ${position.y}).`,
+    actions: [{ tool: 'createObject', input, result }],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 8: Move objects by color to a direction
+// ---------------------------------------------------------------------------
+
+function handleMoveByColor(
+  msg: string,
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  const color = extractColor(msg)
+  const direction = extractDirection(msg)
+  if (!color || !direction) {
+    return { message: "I couldn't determine the color or direction. Try 'Move all pink stickies to the right'.", actions: [] }
+  }
+
+  // Find all objects matching that color
+  const matching: Array<{ id: string; x: number; y: number }> = []
+  objectsMap.forEach((obj: any, id: string) => {
+    if (obj.fill === color) {
+      matching.push({ id, x: obj.x, y: obj.y })
+    }
+  })
+
+  if (matching.length === 0) {
+    const colorName = Object.entries(COLOR_MAP).find(([, v]) => v === color)?.[0] || color
+    return { message: `I couldn't find any ${colorName} objects on the board.`, actions: [] }
+  }
+
+  const actions: ToolAction[] = []
+  for (const obj of matching) {
+    let newX = obj.x
+    let newY = obj.y
+
+    switch (direction) {
+      case 'right': newX = 800; break
+      case 'left': newX = 100; break
+      case 'top': newY = 80; break
+      case 'bottom': newY = 600; break
+    }
+
+    const input = { id: obj.id, x: newX, y: newY }
+    const result = executeMoveObject(input, objectsMap)
+    actions.push({ tool: 'moveObject', input, result })
+  }
+
+  const colorName = Object.entries(COLOR_MAP).find(([, v]) => v === color)?.[0] || color
+  return {
+    message: `Moved ${matching.length} ${colorName} object(s) to the ${direction}.`,
+    actions,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 9: Resize frame to fit contents
+// ---------------------------------------------------------------------------
+
+function handleResizeFrame(
+  msg: string,
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  const lower = msg.toLowerCase()
+
+  // Find the target frame
+  let targetFrameId: string | null = null
+  let _targetFrame: any = null
+
+  objectsMap.forEach((obj: any, id: string) => {
+    if (obj.type !== 'frame') return
+
+    // Match by text content if mentioned
+    if (obj.text && lower.includes(obj.text.toLowerCase())) {
+      targetFrameId = id
+      _targetFrame = obj
+    }
+
+    // Fallback: first frame found
+    if (!targetFrameId) {
+      targetFrameId = id
+      _targetFrame = obj
+    }
+  })
+
+  if (!targetFrameId || !_targetFrame) {
+    return { message: "I couldn't find a frame on the board to resize. Create a frame first!", actions: [] }
+  }
+
+  // Find all non-frame objects that overlap with the frame
+  const frameX = _targetFrame.x as number
+  const frameY = _targetFrame.y as number
+  const frameW = _targetFrame.width as number
+  const frameH = _targetFrame.height as number
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  let hasContents = false
+
+  objectsMap.forEach((obj: any, id: string) => {
+    if (id === targetFrameId || obj.type === 'frame') return
+
+    const objX = obj.x as number
+    const objY = obj.y as number
+    const objW = (obj.width as number) || 200
+    const objH = (obj.height as number) || 150
+
+    // Check if the object is roughly inside (or near) the frame
+    const isInside = objX >= frameX - 50 && objX <= frameX + frameW + 50 &&
+                     objY >= frameY - 50 && objY <= frameY + frameH + 50
+
+    if (isInside) {
+      hasContents = true
+      minX = Math.min(minX, objX)
+      minY = Math.min(minY, objY)
+      maxX = Math.max(maxX, objX + objW)
+      maxY = Math.max(maxY, objY + objH)
+    }
+  })
+
+  if (!hasContents) {
+    return { message: `The frame "${_targetFrame.text || 'Untitled'}" appears to be empty. Nothing to resize to.`, actions: [] }
+  }
+
+  // Add padding
+  const padding = 30
+  const newWidth = (maxX - minX) + padding * 2
+  const newHeight = (maxY - frameY) + padding + 60 // 60 for title bar
+
+  const input = { id: targetFrameId, width: Math.max(newWidth, 200), height: Math.max(newHeight, 200) }
+  const result = executeUpdateObject(input, objectsMap)
+
+  return {
+    message: `Resized the frame "${_targetFrame.text || 'Untitled'}" to fit its contents (${Math.round(newWidth)}x${Math.round(newHeight)}).`,
+    actions: [{ tool: 'updateObject', input, result }],
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 10: Space elements evenly
+// ---------------------------------------------------------------------------
+
+function handleSpaceEvenly(
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  // Collect all non-frame objects
+  const objects: Array<{ id: string; x: number; y: number; width: number; height: number }> = []
+  objectsMap.forEach((obj: any, id: string) => {
+    if (obj.type !== 'frame') {
+      objects.push({ id, x: obj.x, y: obj.y, width: obj.width || 200, height: obj.height || 150 })
+    }
+  })
+
+  if (objects.length < 2) {
+    return { message: 'Need at least 2 objects on the board to space evenly. Create some objects first!', actions: [] }
+  }
+
+  // Sort by current x position
+  objects.sort((a, b) => a.x - b.x)
+
+  // Calculate even spacing across the horizontal range
+  const startX = 100
+  const endX = startX + (objects.length - 1) * (objects[0].width + 30)
+  const spacing = (endX - startX) / (objects.length - 1)
+
+  const actions: ToolAction[] = []
+  // Keep the same y position for each object, just redistribute x
+  const avgY = objects.reduce((sum, o) => sum + o.y, 0) / objects.length
+
+  for (let i = 0; i < objects.length; i++) {
+    const x = Math.round(startX + i * spacing)
+    const y = Math.round(avgY)
+    const input = { id: objects[i].id, x, y }
+    const result = executeMoveObject(input, objectsMap)
+    actions.push({ tool: 'moveObject', input, result })
+  }
+
+  return {
+    message: `Spaced ${objects.length} elements evenly across the board.`,
+    actions,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 11: SWOT analysis template
+// ---------------------------------------------------------------------------
+
+function handleSwotTemplate(
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  const actions: ToolAction[] = []
+  const gap = 20
+  const frameWidth = 350
+  const frameHeight = 350
+  const stickyWidth = 200
+  const stickyHeight = 150
+  const startX = 50
+  const startY = 50
+
+  const quadrants = [
+    { label: 'Strengths', color: '#98FB98', col: 0, row: 0 },
+    { label: 'Weaknesses', color: '#FFB6C1', col: 1, row: 0 },
+    { label: 'Opportunities', color: '#87CEEB', col: 0, row: 1 },
+    { label: 'Threats', color: '#FFA07A', col: 1, row: 1 },
+  ]
+
+  for (const q of quadrants) {
+    const frameX = startX + q.col * (frameWidth + gap)
+    const frameY = startY + q.row * (frameHeight + gap)
+
+    // Create frame
+    const frameInput = { type: 'frame', x: frameX, y: frameY, width: frameWidth, height: frameHeight, text: q.label, fill: '#E8E8E8' }
+    const frameResult = executeCreateObject(frameInput, objectsMap)
+    actions.push({ tool: 'createObject', input: frameInput, result: frameResult })
+
+    // Create 2 stickies inside
+    for (let i = 0; i < 2; i++) {
+      const stickyX = frameX + (frameWidth - stickyWidth) / 2
+      const stickyY = frameY + 60 + i * (stickyHeight + gap)
+      const stickyInput = { type: 'sticky', x: stickyX, y: stickyY, width: stickyWidth, height: stickyHeight, fill: q.color }
+      const stickyResult = executeCreateObject(stickyInput, objectsMap)
+      actions.push({ tool: 'createObject', input: stickyInput, result: stickyResult })
+    }
+  }
+
+  return {
+    message: 'Created a SWOT analysis template with four quadrants: Strengths (green), Weaknesses (pink), Opportunities (blue), and Threats (orange). Each has empty sticky notes ready to fill in.',
+    actions,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 12: User journey map
+// ---------------------------------------------------------------------------
+
+function handleJourneyMap(
+  msg: string,
+  objectsMap: Y.Map<any>
+): ParsedCommand {
+  const stageCount = extractStageCount(msg)
+  const actions: ToolAction[] = []
+  const gap = 20
+  const frameWidth = 220
+  const frameHeight = 400
+  const stickyWidth = 180
+  const stickyHeight = 100
+  const startX = 50
+  const startY = 50
+
+  const defaultStages = ['Awareness', 'Consideration', 'Decision', 'Onboarding', 'Retention', 'Advocacy']
+
+  for (let i = 0; i < stageCount; i++) {
+    const frameX = startX + i * (frameWidth + gap)
+    const frameY = startY
+    const label = defaultStages[i] || `Stage ${i + 1}`
+
+    // Create frame for this stage
+    const frameInput = { type: 'frame', x: frameX, y: frameY, width: frameWidth, height: frameHeight, text: label, fill: '#E8E8E8' }
+    const frameResult = executeCreateObject(frameInput, objectsMap)
+    actions.push({ tool: 'createObject', input: frameInput, result: frameResult })
+
+    // Add a sticky note inside
+    const stickyX = frameX + (frameWidth - stickyWidth) / 2
+    const stickyY = frameY + 60
+    const stickyInput = { type: 'sticky', x: stickyX, y: stickyY, width: stickyWidth, height: stickyHeight, fill: '#FFD700' }
+    const stickyResult = executeCreateObject(stickyInput, objectsMap)
+    actions.push({ tool: 'createObject', input: stickyInput, result: stickyResult })
+  }
+
+  return {
+    message: `Created a user journey map with ${stageCount} stages: ${defaultStages.slice(0, stageCount).join(', ')}. Each stage has a frame with an empty sticky note for your touchpoints.`,
+    actions,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Command 1 & 2: Create a generic object
+// ---------------------------------------------------------------------------
+
 function handleCreateObject(
   msg: string,
   objectsMap: Y.Map<any>
@@ -416,7 +805,17 @@ function handleCreateObject(
 export function parseCommand(message: string, doc: Y.Doc): ParsedCommand {
   const objectsMap = doc.getMap('objects') as Y.Map<any>
 
-  // Order matters — check most specific patterns first
+  // Order matters — check most specific/complex patterns first
+
+  // 12. User journey map
+  if (isJourneyMapCommand(message)) {
+    return handleJourneyMap(message, objectsMap)
+  }
+
+  // 11. SWOT analysis template
+  if (isSwotCommand(message)) {
+    return handleSwotTemplate(objectsMap)
+  }
 
   // 6. Retrospective board
   if (isRetroCommand(message)) {
@@ -428,14 +827,34 @@ export function parseCommand(message: string, doc: Y.Doc): ParsedCommand {
     return handleCreateGrid(message, objectsMap)
   }
 
+  // 9. Resize frame to fit contents
+  if (isResizeFrameCommand(message)) {
+    return handleResizeFrame(message, objectsMap)
+  }
+
+  // 10. Space elements evenly
+  if (isSpaceEvenlyCommand(message)) {
+    return handleSpaceEvenly(objectsMap)
+  }
+
+  // 8. Move objects by color to a direction
+  if (isMoveByColorCommand(message)) {
+    return handleMoveByColor(message, objectsMap)
+  }
+
   // 5. Arrange existing sticky notes in a grid
   if (isArrangeCommand(message)) {
     return handleArrangeGrid(objectsMap)
   }
 
-  // 3. Change object color
+  // 3. Change object color (must come before generic create to avoid "make" false positives)
   if (isUpdateColorCommand(message)) {
     return handleUpdateColor(message, objectsMap)
+  }
+
+  // 7. Create a frame with label
+  if (isCreateFrameCommand(message)) {
+    return handleCreateFrame(message, objectsMap)
   }
 
   // 1 & 2. Create an object (sticky note, rectangle, circle, etc.)
@@ -445,7 +864,7 @@ export function parseCommand(message: string, doc: Y.Doc): ParsedCommand {
 
   // Unrecognized command
   return {
-    message: "I'm not sure what you'd like me to do. Try commands like:\n• \"Add a yellow sticky note that says Hello\"\n• \"Create a blue rectangle at position 100, 200\"\n• \"Change the sticky note color to green\"\n• \"Create a 2x3 grid of sticky notes\"\n• \"Arrange the sticky notes in a grid\"\n• \"Set up a retrospective board\"",
+    message: "I'm not sure what you'd like me to do. Try commands like:\n• \"Add a yellow sticky note that says Hello\"\n• \"Create a blue rectangle at position 100, 200\"\n• \"Add a frame called 'Sprint Planning'\"\n• \"Move all pink stickies to the right\"\n• \"Resize the frame to fit its contents\"\n• \"Space these elements evenly\"\n• \"Create a 2x3 grid of sticky notes\"\n• \"Arrange the sticky notes in a grid\"\n• \"Set up a retrospective board\"\n• \"Create a SWOT analysis template\"\n• \"Build a user journey map with 5 stages\"",
     actions: [],
   }
 }

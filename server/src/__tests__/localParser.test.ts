@@ -1,16 +1,22 @@
 /**
  * Local AI Command Parser Tests
  *
- * Tests the fallback parser that handles the 6 required commands
+ * Tests the fallback parser that handles all 12 AI commands
  * without calling the Anthropic API.
  *
- * The 6 commands:
+ * Creation Commands:
  *  1. "Add a yellow sticky note that says User Research"
  *  2. "Create a blue rectangle at position 100, 200"
  *  3. "Change the sticky note color to green"
  *  4. "Create a 2x3 grid of sticky notes for pros and cons"
  *  5. "Arrange these sticky notes in a grid"
  *  6. "Set up a retrospective board"
+ *  7. "Add a frame called 'Sprint Planning'"
+ *  8. "Move all the pink sticky notes to the right side"
+ *  9. "Resize the frame to fit its contents"
+ * 10. "Space these elements evenly"
+ * 11. "Create a SWOT analysis template with four quadrants"
+ * 12. "Build a user journey map with 5 stages"
  */
 
 import { describe, it, expect } from 'vitest'
@@ -303,6 +309,288 @@ describe('Command 6: Set up a retrospective board', () => {
     // Frames should be at different x positions (columns)
     const uniqueX = new Set(xPositions)
     expect(uniqueX.size).toBe(3)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 7: Add a frame with a label
+// ---------------------------------------------------------------------------
+
+describe('Command 7: Create a frame', () => {
+  it('parses "Add a frame called Sprint Planning"', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Add a frame called Sprint Planning', doc)
+    expect(result.actions.length).toBe(1)
+    expect(result.actions[0].tool).toBe('createObject')
+    expect(result.actions[0].input.type).toBe('frame')
+    expect(result.actions[0].input.text).toBe('Sprint Planning')
+  })
+
+  it('parses "Create a frame named Design Review"', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a frame named Design Review', doc)
+    expect(result.actions[0].input.type).toBe('frame')
+    expect(result.actions[0].input.text).toBe('Design Review')
+  })
+
+  it('parses frame with quoted name', () => {
+    const doc = createTestDoc()
+    const result = parseCommand("Add a frame called 'Sprint Planning'", doc)
+    expect(result.actions[0].input.type).toBe('frame')
+    expect(result.actions[0].input.text).toBe('Sprint Planning')
+  })
+
+  it('uses default frame size', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a frame called Test', doc)
+    expect(result.actions[0].input.width).toBe(400)
+    expect(result.actions[0].input.height).toBe(300)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 8: Move objects by color to a position
+// ---------------------------------------------------------------------------
+
+describe('Command 8: Move objects by color', () => {
+  it('parses "Move all the pink sticky notes to the right side"', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 100, y: 100, width: 200, height: 150, fill: '#FFB6C1', text: 'A' },
+      's2': { type: 'sticky', x: 100, y: 300, width: 200, height: 150, fill: '#FFB6C1', text: 'B' },
+      's3': { type: 'sticky', x: 100, y: 500, width: 200, height: 150, fill: '#FFD700', text: 'C' },
+    })
+    const result = parseCommand('Move all the pink sticky notes to the right side', doc)
+    // Should only move the 2 pink stickies, not the yellow one
+    expect(result.actions.length).toBe(2)
+    result.actions.forEach((action) => {
+      expect(action.tool).toBe('moveObject')
+      // Right side means high x value
+      expect(action.input.x as number).toBeGreaterThanOrEqual(700)
+    })
+  })
+
+  it('parses "Move the green stickies to the left"', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 500, y: 100, width: 200, height: 150, fill: '#98FB98', text: 'G1' },
+      's2': { type: 'sticky', x: 600, y: 300, width: 200, height: 150, fill: '#98FB98', text: 'G2' },
+    })
+    const result = parseCommand('Move the green stickies to the left', doc)
+    expect(result.actions.length).toBe(2)
+    result.actions.forEach((action) => {
+      expect(action.tool).toBe('moveObject')
+      expect(action.input.x as number).toBeLessThanOrEqual(200)
+    })
+  })
+
+  it('parses "Move all blue stickies to the top"', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 100, y: 500, width: 200, height: 150, fill: '#87CEEB', text: 'B1' },
+    })
+    const result = parseCommand('Move all blue stickies to the top', doc)
+    expect(result.actions.length).toBe(1)
+    expect(result.actions[0].input.y as number).toBeLessThanOrEqual(100)
+  })
+
+  it('returns message when no matching objects found', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Move all the pink sticky notes to the right side', doc)
+    expect(result.actions.length).toBe(0)
+    expect(result.message.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 9: Resize frame to fit contents
+// ---------------------------------------------------------------------------
+
+describe('Command 9: Resize frame to fit contents', () => {
+  it('parses "Resize the frame to fit its contents"', () => {
+    const doc = createDocWithObjects({
+      'f1': { type: 'frame', x: 50, y: 50, width: 400, height: 300, fill: '#E8E8E8', text: 'My Frame' },
+      's1': { type: 'sticky', x: 60, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'Inside 1' },
+      's2': { type: 'sticky', x: 60, y: 280, width: 200, height: 150, fill: '#FFD700', text: 'Inside 2' },
+    })
+    const result = parseCommand('Resize the frame to fit its contents', doc)
+    expect(result.actions.length).toBe(1)
+    expect(result.actions[0].tool).toBe('updateObject')
+    // Should resize to encompass both stickies with padding
+    expect(result.actions[0].input.id).toBe('f1')
+    expect(result.actions[0].input.width).toBeDefined()
+    expect(result.actions[0].input.height).toBeDefined()
+  })
+
+  it('handles named frame: "Resize the Sprint Planning frame to fit"', () => {
+    const doc = createDocWithObjects({
+      'f1': { type: 'frame', x: 50, y: 50, width: 200, height: 200, fill: '#E8E8E8', text: 'Sprint Planning' },
+      'f2': { type: 'frame', x: 500, y: 50, width: 200, height: 200, fill: '#E8E8E8', text: 'Design' },
+      's1': { type: 'sticky', x: 60, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'Task 1' },
+    })
+    const result = parseCommand('Resize the Sprint Planning frame to fit', doc)
+    expect(result.actions[0].input.id).toBe('f1')
+  })
+
+  it('returns message when no frame found', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Resize the frame to fit its contents', doc)
+    expect(result.actions.length).toBe(0)
+    expect(result.message).toContain('frame')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 10: Space elements evenly
+// ---------------------------------------------------------------------------
+
+describe('Command 10: Space elements evenly', () => {
+  it('parses "Space these elements evenly"', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 100, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'A' },
+      's2': { type: 'sticky', x: 150, y: 120, width: 200, height: 150, fill: '#FFD700', text: 'B' },
+      's3': { type: 'sticky', x: 800, y: 500, width: 200, height: 150, fill: '#FFD700', text: 'C' },
+    })
+    const result = parseCommand('Space these elements evenly', doc)
+    expect(result.actions.length).toBe(3)
+    result.actions.forEach((action) => {
+      expect(action.tool).toBe('moveObject')
+    })
+  })
+
+  it('distributes objects with equal spacing', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 50, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'A' },
+      's2': { type: 'sticky', x: 55, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'B' },
+      's3': { type: 'sticky', x: 900, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'C' },
+    })
+    const result = parseCommand('Space these elements evenly', doc)
+
+    // Get resulting x positions and verify even spacing
+    const xValues = result.actions.map((a) => a.input.x as number).sort((a, b) => a - b)
+    const gap1 = xValues[1] - xValues[0]
+    const gap2 = xValues[2] - xValues[1]
+    // Gaps should be approximately equal (within 1px tolerance)
+    expect(Math.abs(gap1 - gap2)).toBeLessThanOrEqual(1)
+  })
+
+  it('returns message when fewer than 2 objects', () => {
+    const doc = createDocWithObjects({
+      's1': { type: 'sticky', x: 100, y: 100, width: 200, height: 150, fill: '#FFD700', text: 'Only one' },
+    })
+    const result = parseCommand('Space these elements evenly', doc)
+    expect(result.actions.length).toBe(0)
+    expect(result.message.length).toBeGreaterThan(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 11: SWOT analysis template
+// ---------------------------------------------------------------------------
+
+describe('Command 11: SWOT analysis template', () => {
+  it('parses "Create a SWOT analysis template with four quadrants"', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a SWOT analysis template with four quadrants', doc)
+    // Should create: 4 frames (S, W, O, T) + 8 stickies (2 per quadrant)
+    expect(result.actions.length).toBeGreaterThanOrEqual(8)
+
+    const frames = result.actions.filter((a) => a.input.type === 'frame')
+    expect(frames.length).toBe(4)
+  })
+
+  it('creates frames with correct SWOT labels', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a SWOT analysis template', doc)
+
+    const frameTexts = result.actions
+      .filter((a) => a.input.type === 'frame')
+      .map((a) => a.input.text as string)
+
+    expect(frameTexts).toContain('Strengths')
+    expect(frameTexts).toContain('Weaknesses')
+    expect(frameTexts).toContain('Opportunities')
+    expect(frameTexts).toContain('Threats')
+  })
+
+  it('arranges quadrants in a 2x2 grid', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a SWOT analysis', doc)
+
+    const frames = result.actions.filter((a) => a.input.type === 'frame')
+    const xPositions = new Set(frames.map((f) => f.input.x as number))
+    const yPositions = new Set(frames.map((f) => f.input.y as number))
+
+    expect(xPositions.size).toBe(2) // 2 columns
+    expect(yPositions.size).toBe(2) // 2 rows
+  })
+
+  it('also matches "SWOT analysis" without "template"', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a SWOT analysis', doc)
+    expect(result.actions.length).toBeGreaterThanOrEqual(8)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command 12: User journey map
+// ---------------------------------------------------------------------------
+
+describe('Command 12: User journey map', () => {
+  it('parses "Build a user journey map with 5 stages"', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Build a user journey map with 5 stages', doc)
+    // Should create: 5 frames (stages) + stickies inside each
+    const frames = result.actions.filter((a) => a.input.type === 'frame')
+    expect(frames.length).toBe(5)
+  })
+
+  it('creates sequential stage labels', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Build a user journey map with 5 stages', doc)
+
+    const frameTexts = result.actions
+      .filter((a) => a.input.type === 'frame')
+      .map((a) => a.input.text as string)
+
+    // Should have standard journey map stages
+    expect(frameTexts.length).toBe(5)
+    // Each should have text
+    frameTexts.forEach((text) => {
+      expect(text.length).toBeGreaterThan(0)
+    })
+  })
+
+  it('arranges stages horizontally left-to-right', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Create a user journey map with 3 stages', doc)
+
+    const frames = result.actions.filter((a) => a.input.type === 'frame')
+    const xPositions = frames.map((f) => f.input.x as number)
+
+    // Each subsequent stage should be further right
+    for (let i = 1; i < xPositions.length; i++) {
+      expect(xPositions[i]).toBeGreaterThan(xPositions[i - 1])
+    }
+  })
+
+  it('defaults to 5 stages when count not specified', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Build a user journey map', doc)
+    const frames = result.actions.filter((a) => a.input.type === 'frame')
+    expect(frames.length).toBe(5)
+  })
+
+  it('adds stickies inside each stage', () => {
+    const doc = createTestDoc()
+    const result = parseCommand('Build a user journey map with 3 stages', doc)
+    const stickies = result.actions.filter((a) => a.input.type === 'sticky')
+    // At least 1 sticky per stage
+    expect(stickies.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('also matches "Create a user journey map" and "user journey"', () => {
+    const doc = createTestDoc()
+    const result1 = parseCommand('Create a user journey map with 4 stages', doc)
+    const frames1 = result1.actions.filter((a) => a.input.type === 'frame')
+    expect(frames1.length).toBe(4)
   })
 })
 
