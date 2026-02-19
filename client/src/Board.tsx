@@ -119,7 +119,7 @@ export default function Board({ userName }: BoardProps) {
 
   // ---- Cursor awareness ---------------------------------------------------
   const handleMouseMove = useCallback(
-    (e: Konva.KonvaEventObject<MouseEvent>) => {
+    (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()

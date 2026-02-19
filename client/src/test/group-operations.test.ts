@@ -236,7 +236,7 @@ describe('Duplicate all selected objects', () => {
 
 describe('Change color of all selected objects', () => {
   it('applies color to a single selected object', () => {
-    const objects = createBoardState()
+    createBoardState()
     const selectedIds = new Set(['a'])
     const newColor = '#EF4444'
 
@@ -250,7 +250,7 @@ describe('Change color of all selected objects', () => {
   })
 
   it('applies color to all selected objects', () => {
-    const objects = createBoardState()
+    createBoardState()
     const selectedIds = new Set(['a', 'b', 'c'])
     const newColor = '#8B5CF6'
 
