@@ -17,6 +17,7 @@ export type BoardObject = {
   fromId?: string    // Object ID this line starts from (connector)
   toId?: string      // Object ID this line ends at (connector)
   arrowEnd?: boolean // Show arrowhead at end (default true for lines)
+  rotation?: number  // Degrees (0-360), rotation around center. Default 0.
 }
 
 /** Active tool selected in the toolbar. */

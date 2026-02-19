@@ -8,7 +8,7 @@ const HANDLE_RADIUS = 5
 interface Props {
   obj: BoardObject
   isSelected: boolean
-  onSelect: (id: string) => void
+  onSelect: (id: string, e?: Konva.KonvaEventObject<MouseEvent>) => void
   onUpdate: (id: string, updates: Partial<BoardObject>) => void
   allObjects: BoardObject[]
   scale: number

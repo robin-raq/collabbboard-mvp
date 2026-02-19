@@ -6,6 +6,7 @@ import BoardShape from './BoardShape'
 import Connector from './Connector'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
+import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
 
 const DEBUG = import.meta.env.DEV
 
@@ -31,11 +32,21 @@ export default function Board({ userName }: BoardProps) {
   const stageRef = useRef<Konva.Stage>(null)
   const [scale, setScale] = useState(1)
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Multi-select: Set of selected object IDs
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [activeTool, setActiveTool] = useState<ToolType>('select')
   const [showColorPicker, setShowColorPicker] = useState(false)
   // Line tool: first click sets the start point, second click creates the line
   const [lineStart, setLineStart] = useState<{ x: number; y: number; fromId?: string } | null>(null)
+  // Rubber-band selection
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
+  const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+
+  // Derived: first selected ID (for single-object contexts like color picker)
+  const selectedId = useMemo(
+    () => selectedIds.size > 0 ? [...selectedIds][0] : null,
+    [selectedIds],
+  )
 
   // Track window resize
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
@@ -100,7 +111,7 @@ export default function Board({ userName }: BoardProps) {
   )
 
   // ---- Pan ----------------------------------------------------------------
-  const handleDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+  const handleStageDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     if (e.target === e.target.getStage()) {
       setStagePos({ x: e.target.x(), y: e.target.y() })
     }
@@ -108,7 +119,7 @@ export default function Board({ userName }: BoardProps) {
 
   // ---- Cursor awareness ---------------------------------------------------
   const handleMouseMove = useCallback(
-    (_e: Konva.KonvaEventObject<MouseEvent>) => {
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
@@ -116,8 +127,17 @@ export default function Board({ userName }: BoardProps) {
       const x = (pointer.x - stagePos.x) / scale
       const y = (pointer.y - stagePos.y) / scale
       setCursor(x, y)
+
+      // Rubber-band selection update
+      if (selectionStartRef.current && activeTool === 'select') {
+        const rect = normalizeRect(
+          selectionStartRef.current.x, selectionStartRef.current.y,
+          x, y,
+        )
+        setSelectionRect(rect)
+      }
     },
-    [setCursor, stagePos, scale],
+    [setCursor, stagePos, scale, activeTool],
   )
 
   // ---- Helper: convert screen pointer to world coords ----------------------
@@ -131,6 +151,37 @@ export default function Board({ userName }: BoardProps) {
       y: (pointer.y - stagePos.y) / scale,
     }
   }, [stagePos, scale])
+
+  // ---- Rubber-band selection: mouse down on empty canvas -------------------
+  const handleStageMouseDown = useCallback(
+    (e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (e.target !== e.target.getStage()) return
+      if (activeTool !== 'select') return
+      if (lineStart) return
+
+      const world = pointerToWorld()
+      if (!world) return
+
+      selectionStartRef.current = { x: world.x, y: world.y }
+    },
+    [activeTool, lineStart, pointerToWorld],
+  )
+
+  // ---- Rubber-band selection: mouse up on stage ----------------------------
+  const handleStageMouseUp = useCallback(
+    (_e: Konva.KonvaEventObject<MouseEvent>) => {
+      if (selectionStartRef.current && selectionRect) {
+        // Only do rubber-band select if the rect is big enough (not just a click)
+        if (selectionRect.w > 5 || selectionRect.h > 5) {
+          const selected = objects.filter((obj) => obj.type !== 'line' && intersects(obj, selectionRect))
+          setSelectedIds(new Set(selected.map((o) => o.id)))
+        }
+        setSelectionRect(null)
+        selectionStartRef.current = null
+      }
+    },
+    [selectionRect, objects],
+  )
 
   // ---- Click on empty canvas = deselect or create object -------------------
   const handleStageClick = useCallback(
@@ -168,7 +219,7 @@ export default function Board({ userName }: BoardProps) {
             arrowEnd: activeTool === 'arrow',
           }
           createObject(obj)
-          setSelectedId(id)
+          setSelectedIds(new Set([id]))
           setLineStart(null)
           setActiveTool('select')
         }
@@ -176,7 +227,7 @@ export default function Board({ userName }: BoardProps) {
       }
 
       if (activeTool === 'select') {
-        setSelectedId(null)
+        setSelectedIds(new Set())
         setShowColorPicker(false)
         setLineStart(null)
         return
@@ -206,14 +257,14 @@ export default function Board({ userName }: BoardProps) {
       }
 
       createObject(obj)
-      setSelectedId(id)
+      setSelectedIds(new Set([id]))
       setActiveTool('select')
     },
     [activeTool, stagePos, scale, createObject, lineStart, pointerToWorld],
   )
 
   // ---- Handle clicking on a shape with line/arrow tool to start connector --
-  const handleSelectOrConnect = useCallback((id: string) => {
+  const handleSelectOrConnect = useCallback((id: string, e?: Konva.KonvaEventObject<MouseEvent>) => {
     const isLineTool = activeTool === 'line' || activeTool === 'arrow'
     if (isLineTool) {
       const target = objects.find((o) => o.id === id)
@@ -246,18 +297,37 @@ export default function Board({ userName }: BoardProps) {
           arrowEnd: activeTool === 'arrow',
         }
         createObject(obj)
-        setSelectedId(connId)
+        setSelectedIds(new Set([connId]))
         setLineStart(null)
         setActiveTool('select')
       }
       return
     }
 
-    setSelectedId(id)
+    // Multi-select: shift-click toggles
+    if (e?.evt?.shiftKey) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+    } else {
+      setSelectedIds(new Set([id]))
+    }
     setShowColorPicker(false)
   }, [activeTool, lineStart, objects, createObject])
 
-  // handleSelect is now handleSelectOrConnect (defined above)
+  // ---- Group drag handler (called from BoardShape when multi-selected) -----
+  const handleGroupDragEnd = useCallback((draggedId: string, dx: number, dy: number) => {
+    for (const id of selectedIds) {
+      if (id === draggedId) continue
+      const obj = objects.find((o) => o.id === id)
+      if (obj) {
+        updateObject(id, { x: obj.x + dx, y: obj.y + dy })
+      }
+    }
+  }, [selectedIds, objects, updateObject])
 
   // ---- Keyboard shortcuts -------------------------------------------------
   useEffect(() => {
@@ -274,37 +344,53 @@ export default function Board({ userName }: BoardProps) {
         case 't': setActiveTool('text'); break
         case 'f': setActiveTool('frame'); break
         case 'l': setActiveTool('line'); setLineStart(null); break
-        case 'a': setActiveTool('arrow'); setLineStart(null); break
         case 'delete':
         case 'backspace':
-          if (selectedId) {
-            deleteObject(selectedId)
-            setSelectedId(null)
+          if (selectedIds.size > 0) {
+            for (const id of selectedIds) {
+              deleteObject(id)
+            }
+            setSelectedIds(new Set())
           }
           break
         case 'escape':
-          setSelectedId(null)
+          setSelectedIds(new Set())
           setActiveTool('select')
           setShowColorPicker(false)
           setLineStart(null)
           break
-        case 'd':
-          if ((e.ctrlKey || e.metaKey) && selectedId) {
+        case 'a':
+          if (e.ctrlKey || e.metaKey) {
             e.preventDefault()
-            // Duplicate selected object
-            const src = objects.find((o) => o.id === selectedId)
-            if (src) {
-              const newId = crypto.randomUUID()
-              createObject({ ...src, id: newId, x: src.x + 20, y: src.y + 20 })
-              setSelectedId(newId)
+            // Select all non-line objects
+            const allIds = objects.filter((o) => o.type !== 'line').map((o) => o.id)
+            setSelectedIds(new Set(allIds))
+          } else {
+            setActiveTool('arrow')
+            setLineStart(null)
+          }
+          break
+        case 'd':
+          if ((e.ctrlKey || e.metaKey) && selectedIds.size > 0) {
+            e.preventDefault()
+            // Duplicate all selected objects
+            const newIds = new Set<string>()
+            for (const id of selectedIds) {
+              const src = objects.find((o) => o.id === id)
+              if (src) {
+                const newId = crypto.randomUUID()
+                createObject({ ...src, id: newId, x: src.x + 20, y: src.y + 20 })
+                newIds.add(newId)
+              }
             }
+            setSelectedIds(newIds)
           }
           break
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedId, deleteObject, objects, createObject])
+  }, [selectedIds, deleteObject, objects, createObject])
 
   // ---- Zoom controls ------------------------------------------------------
   const zoomIn = useCallback(() => {
@@ -320,28 +406,37 @@ export default function Board({ userName }: BoardProps) {
     setStagePos({ x: 0, y: 0 })
   }, [])
 
-  // ---- Color picker -------------------------------------------------------
+  // ---- Color picker (applies to all selected) -----------------------------
   const handleColorChange = useCallback(
     (color: string) => {
-      if (selectedId) {
-        updateObject(selectedId, { fill: color })
+      for (const id of selectedIds) {
+        updateObject(id, { fill: color })
       }
       setShowColorPicker(false)
     },
-    [selectedId, updateObject],
+    [selectedIds, updateObject],
   )
+
+  // ---- Multi-select bounding box ------------------------------------------
+  const selectionBounds = useMemo(() => {
+    if (selectedIds.size <= 1) return null
+    const selected = objects.filter((o) => selectedIds.has(o.id))
+    return getSelectionBounds(selected)
+  }, [selectedIds, objects])
 
   // ---- Toolbar data -------------------------------------------------------
   const tools: Array<{ type: ToolType; label: string; icon: string; shortcut: string }> = [
-    { type: 'select', label: 'Select', icon: '↖', shortcut: 'V' },
-    { type: 'sticky', label: 'Sticky', icon: '☐', shortcut: 'S' },
-    { type: 'rect', label: 'Rect', icon: '▬', shortcut: 'R' },
-    { type: 'circle', label: 'Circle', icon: '●', shortcut: 'C' },
+    { type: 'select', label: 'Select', icon: '\u2196', shortcut: 'V' },
+    { type: 'sticky', label: 'Sticky', icon: '\u2610', shortcut: 'S' },
+    { type: 'rect', label: 'Rect', icon: '\u25AC', shortcut: 'R' },
+    { type: 'circle', label: 'Circle', icon: '\u25CF', shortcut: 'C' },
     { type: 'text', label: 'Text', icon: 'T', shortcut: 'T' },
-    { type: 'frame', label: 'Frame', icon: '⊞', shortcut: 'F' },
-    { type: 'line', label: 'Line', icon: '—', shortcut: 'L' },
-    { type: 'arrow', label: 'Arrow', icon: '→', shortcut: 'A' },
+    { type: 'frame', label: 'Frame', icon: '\u229E', shortcut: 'F' },
+    { type: 'line', label: 'Line', icon: '\u2014', shortcut: 'L' },
+    { type: 'arrow', label: 'Arrow', icon: '\u2192', shortcut: 'A' },
   ]
+
+  const hasSelection = selectedIds.size > 0
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
@@ -382,19 +477,19 @@ export default function Board({ userName }: BoardProps) {
         {/* Delete button */}
         <button
           onClick={() => {
-            if (selectedId) {
-              deleteObject(selectedId)
-              setSelectedId(null)
+            if (hasSelection) {
+              for (const id of selectedIds) deleteObject(id)
+              setSelectedIds(new Set())
             }
           }}
           style={{
             ...toolBtnStyle,
-            color: selectedId ? '#EF4444' : '#d1d5db',
+            color: hasSelection ? '#EF4444' : '#d1d5db',
           }}
           title="Delete (Del)"
-          disabled={!selectedId}
+          disabled={!hasSelection}
         >
-          <span style={{ fontSize: 16 }}>🗑</span>
+          <span style={{ fontSize: 16 }}>&#128465;</span>
           <span style={{ fontSize: 9, marginTop: 2 }}>Del</span>
         </button>
 
@@ -404,10 +499,10 @@ export default function Board({ userName }: BoardProps) {
           style={{
             ...toolBtnStyle,
             position: 'relative',
-            color: selectedId ? '#374151' : '#d1d5db',
+            color: hasSelection ? '#374151' : '#d1d5db',
           }}
           title="Color"
-          disabled={!selectedId}
+          disabled={!hasSelection}
         >
           <span
             style={{
@@ -424,7 +519,7 @@ export default function Board({ userName }: BoardProps) {
       </div>
 
       {/* Color picker popup */}
-      {showColorPicker && selectedId && (
+      {showColorPicker && hasSelection && (
         <div style={colorPickerStyle}>
           {SHAPE_COLORS.map((color) => (
             <button
@@ -482,7 +577,7 @@ export default function Board({ userName }: BoardProps) {
         >
           {userName.charAt(0).toUpperCase()}
         </span>
-        {/* Remote user avatars — show all connected users, not just those with cursor positions */}
+        {/* Remote user avatars */}
         {remoteCursors.slice(0, 5).map((rc) => (
           <span
             key={rc.clientId}
@@ -511,6 +606,26 @@ export default function Board({ userName }: BoardProps) {
         )}
       </div>
 
+      {/* Multi-select count badge */}
+      {selectedIds.size > 1 && (
+        <div style={{
+          position: 'absolute',
+          top: 12,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 40,
+          background: '#2563EB',
+          color: '#fff',
+          padding: '4px 12px',
+          borderRadius: 12,
+          fontSize: 12,
+          fontFamily: 'system-ui, sans-serif',
+          fontWeight: 600,
+        }}>
+          {selectedIds.size} selected
+        </div>
+      )}
+
       {/* Line / Arrow tool hint */}
       {(activeTool === 'line' || activeTool === 'arrow') && (
         <div style={{
@@ -527,14 +642,14 @@ export default function Board({ userName }: BoardProps) {
           fontFamily: 'system-ui, sans-serif',
         }}>
           {lineStart
-            ? `Click to set endpoint (or click a shape to connect) — ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`
-            : `Click to set start point (or click a shape to connect from) — ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`}
+            ? `Click to set endpoint (or click a shape to connect) \u2014 ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`
+            : `Click to set start point (or click a shape to connect from) \u2014 ${activeTool === 'arrow' ? 'Arrow' : 'Line'}`}
         </div>
       )}
 
       {/* Zoom controls (bottom right) */}
       <div style={zoomControlsStyle}>
-        <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out">−</button>
+        <button onClick={zoomOut} style={zoomBtnStyle} title="Zoom Out">&minus;</button>
         <button onClick={zoomReset} style={{ ...zoomBtnStyle, fontSize: 11, minWidth: 48 }}>
           {Math.round(scale * 100)}%
         </button>
@@ -546,14 +661,16 @@ export default function Board({ userName }: BoardProps) {
         ref={stageRef}
         width={size.w}
         height={size.h}
-        draggable={activeTool === 'select' && !lineStart}
+        draggable={activeTool === 'select' && !lineStart && !selectionStartRef.current}
         scaleX={scale}
         scaleY={scale}
         x={stagePos.x}
         y={stagePos.y}
         onWheel={handleWheel}
-        onDragEnd={handleDragEnd}
+        onDragEnd={handleStageDragEnd}
         onMouseMove={handleMouseMove}
+        onMouseDown={handleStageMouseDown}
+        onMouseUp={handleStageMouseUp}
         onClick={handleStageClick}
         onTap={handleStageClick as any}
         style={{ position: 'relative', zIndex: 1, cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
@@ -565,7 +682,7 @@ export default function Board({ userName }: BoardProps) {
               <Connector
                 key={obj.id}
                 obj={obj}
-                isSelected={obj.id === selectedId}
+                isSelected={selectedIds.has(obj.id)}
                 onSelect={handleSelectOrConnect}
                 onUpdate={updateObject}
                 allObjects={objects}
@@ -575,14 +692,45 @@ export default function Board({ userName }: BoardProps) {
               <BoardShape
                 key={obj.id}
                 obj={obj}
-                isSelected={obj.id === selectedId}
+                isSelected={selectedIds.has(obj.id)}
                 onSelect={handleSelectOrConnect}
                 onUpdate={updateObject}
                 stageRef={stageRef}
                 scale={scale}
                 stagePos={stagePos}
+                selectedIds={selectedIds}
+                onGroupDragEnd={handleGroupDragEnd}
               />
             )
+          )}
+
+          {/* Multi-select bounding box */}
+          {selectionBounds && (
+            <KonvaRect
+              x={selectionBounds.x}
+              y={selectionBounds.y}
+              width={selectionBounds.w}
+              height={selectionBounds.h}
+              stroke="#2563EB"
+              strokeWidth={1.5 / scale}
+              fill="transparent"
+              dash={[8 / scale, 4 / scale]}
+              listening={false}
+            />
+          )}
+
+          {/* Rubber-band selection rectangle */}
+          {selectionRect && (
+            <KonvaRect
+              x={selectionRect.x}
+              y={selectionRect.y}
+              width={selectionRect.w}
+              height={selectionRect.h}
+              stroke="#2563EB"
+              strokeWidth={1 / scale}
+              fill="rgba(37, 99, 235, 0.08)"
+              listening={false}
+            />
           )}
         </Layer>
 

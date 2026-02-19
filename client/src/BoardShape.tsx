@@ -1,20 +1,25 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { Group, Rect, Text, Ellipse } from 'react-konva'
+import { Group, Rect, Text, Ellipse, Circle, Line } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
+import { calcAngle } from './utils/geometry'
 
 const HANDLE_SIZE = 10
 const HANDLE_HIT_SIZE = 24 // Larger invisible hit area for easier grabbing
 const MIN_SIZE = 30
+const ROTATION_HANDLE_OFFSET = 30 // Distance above shape for rotation handle
 
 interface Props {
   obj: BoardObject
   isSelected: boolean
-  onSelect: (id: string) => void
+  onSelect: (id: string, e?: Konva.KonvaEventObject<MouseEvent>) => void
   onUpdate: (id: string, updates: Partial<BoardObject>) => void
   stageRef: React.RefObject<Konva.Stage | null>
   scale: number
   stagePos: { x: number; y: number }
+  // Multi-select group drag support
+  selectedIds?: Set<string>
+  onGroupDragEnd?: (draggedId: string, dx: number, dy: number) => void
 }
 
 /**
@@ -25,11 +30,13 @@ interface Props {
  *  - Drag to move (live position update)
  *  - Click to select (shows blue border + resize handles)
  *  - Drag corner handles to resize (smooth live preview)
+ *  - Drag rotation handle to rotate (smooth live preview)
  *  - Double-click to edit text (textarea overlay)
  *  - Enter = save, Shift+Enter = newline, Esc = cancel, blur = save
  */
 const BoardShape = memo(function BoardShape({
   obj, isSelected, onSelect, onUpdate, stageRef, scale, stagePos,
+  selectedIds, onGroupDragEnd,
 }: Props) {
   const [isEditing, setIsEditing] = useState(false)
   const [editText, setEditText] = useState(obj.text ?? '')
@@ -47,11 +54,19 @@ const BoardShape = memo(function BoardShape({
   // Flag to prevent the parent Group drag from firing during a resize
   const isResizingRef = useRef(false)
 
+  // Live rotation state
+  const [liveRotation, setLiveRotation] = useState<number | null>(null)
+  const isRotatingRef = useRef(false)
+
+  // Group drag tracking
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null)
+
   // Use live resize values if actively resizing, otherwise use obj values
-  const displayX = liveResize ? liveResize.x : obj.x
-  const displayY = liveResize ? liveResize.y : obj.y
   const displayW = liveResize ? liveResize.width : obj.width
   const displayH = liveResize ? liveResize.height : obj.height
+
+  // The effective rotation (live preview or stored)
+  const effectiveRotation = liveRotation ?? obj.rotation ?? 0
 
   useEffect(() => {
     if (!isEditing) setEditText(obj.text ?? '')
@@ -59,23 +74,42 @@ const BoardShape = memo(function BoardShape({
 
   // ---- Drag ---------------------------------------------------------------
   const handleDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    // If a resize is in progress, prevent the Group from dragging
-    if (isResizingRef.current) {
+    // If a resize or rotation is in progress, prevent the Group from dragging
+    if (isResizingRef.current || isRotatingRef.current) {
       e.target.stopDrag()
+      return
     }
+    // Capture start position for group drag delta calculation
+    const node = e.target
+    dragStartPosRef.current = { x: node.x(), y: node.y() }
   }, [])
 
   const handleDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    if (isResizingRef.current) return
+    if (isResizingRef.current || isRotatingRef.current) return
     if (e.target !== e.currentTarget) return
     const node = e.target
-    onUpdate(obj.id, { x: node.x(), y: node.y() })
-  }, [obj.id, onUpdate])
+
+    // With offset, x/y includes the center offset. We need to convert back to top-left.
+    const newCenterX = node.x()
+    const newCenterY = node.y()
+    const newX = newCenterX - displayW / 2
+    const newY = newCenterY - displayH / 2
+
+    // Calculate delta for group drag
+    if (dragStartPosRef.current && onGroupDragEnd && selectedIds && selectedIds.size > 1 && selectedIds.has(obj.id)) {
+      const dx = newCenterX - dragStartPosRef.current.x
+      const dy = newCenterY - dragStartPosRef.current.y
+      onGroupDragEnd(obj.id, dx, dy)
+    }
+    dragStartPosRef.current = null
+
+    onUpdate(obj.id, { x: newX, y: newY })
+  }, [obj.id, onUpdate, displayW, displayH, onGroupDragEnd, selectedIds])
 
   // ---- Select -------------------------------------------------------------
   const handleClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     e.cancelBubble = true
-    onSelect(obj.id)
+    onSelect(obj.id, e)
   }, [obj.id, onSelect])
 
   // ---- Double-click to edit text ------------------------------------------
@@ -235,11 +269,14 @@ const BoardShape = memo(function BoardShape({
 
       const newBounds = calcResize(corner, dx, dy)
 
-      // Re-enable outer shape Group dragging and reset its position
+      // Re-enable outer shape Group dragging and reset its position (center-based)
       const shapeGroup = shapeGroupRef.current
       if (shapeGroup) {
         shapeGroup.draggable(true)
-        shapeGroup.position({ x: newBounds.x, y: newBounds.y })
+        shapeGroup.position({
+          x: newBounds.x + newBounds.width / 2,
+          y: newBounds.y + newBounds.height / 2,
+        })
       }
 
       setLiveResize(null)
@@ -249,6 +286,49 @@ const BoardShape = memo(function BoardShape({
     },
     [obj.id, calcResize, onUpdate],
   )
+
+  // ---- Rotation handle ----------------------------------------------------
+
+  const handleRotationDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    isRotatingRef.current = true
+    const shapeGroup = shapeGroupRef.current
+    if (shapeGroup) shapeGroup.draggable(false)
+  }, [])
+
+  const handleRotationDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    const stage = stageRef.current
+    if (!stage) return
+    const pointer = stage.getPointerPosition()
+    if (!pointer) return
+
+    // Shape center in world coordinates
+    const centerX = obj.x + displayW / 2
+    const centerY = obj.y + displayH / 2
+
+    // Convert screen pointer to world coords
+    const worldX = (pointer.x - stagePos.x) / scale
+    const worldY = (pointer.y - stagePos.y) / scale
+
+    const angle = calcAngle(worldX, worldY, centerX, centerY)
+    setLiveRotation(angle)
+
+    // Reset drag node position so it doesn't accumulate offset
+    const node = e.target
+    node.position({ x: node.x(), y: node.y() })
+  }, [obj.x, obj.y, displayW, displayH, stagePos, scale, stageRef])
+
+  const handleRotationDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    if (liveRotation !== null) {
+      onUpdate(obj.id, { rotation: Math.round(liveRotation) })
+    }
+    setLiveRotation(null)
+    const shapeGroup = shapeGroupRef.current
+    if (shapeGroup) shapeGroup.draggable(true)
+    setTimeout(() => { isRotatingRef.current = false }, 0)
+  }, [obj.id, onUpdate, liveRotation])
 
   // ---- Render shape body --------------------------------------------------
   const renderBody = () => {
@@ -385,7 +465,7 @@ const BoardShape = memo(function BoardShape({
     }
   }
 
-  // ---- Selection border + resize handles ----------------------------------
+  // ---- Selection border + resize handles + rotation handle ------------------
   const renderSelection = () => {
     if (!isSelected) return null
 
@@ -393,6 +473,10 @@ const BoardShape = memo(function BoardShape({
     const h = displayH
     const hs = HANDLE_SIZE / scale
     const hitHs = HANDLE_HIT_SIZE / scale
+    const rotHandleOffset = ROTATION_HANDLE_OFFSET / scale
+    const rotHandleRadius = 5 / scale
+    const rotHitRadius = 12 / scale
+
     const handles = [
       { key: 'tl', x: 0, y: 0 },
       { key: 'tr', x: w, y: 0 },
@@ -412,6 +496,36 @@ const BoardShape = memo(function BoardShape({
           listening={false}
           dash={[6 / scale, 3 / scale]}
         />
+
+        {/* Rotation handle — line + circle above top-center */}
+        <Line
+          points={[w / 2, 0, w / 2, -rotHandleOffset]}
+          stroke="#2563EB"
+          strokeWidth={1 / scale}
+          listening={false}
+        />
+        {/* Visual rotation circle */}
+        <Circle
+          x={w / 2}
+          y={-rotHandleOffset}
+          radius={rotHandleRadius}
+          fill="#fff"
+          stroke="#2563EB"
+          strokeWidth={1.5 / scale}
+          listening={false}
+        />
+        {/* Invisible rotation hit area (larger circle for easy grabbing) */}
+        <Circle
+          x={w / 2}
+          y={-rotHandleOffset}
+          radius={rotHitRadius}
+          fill="transparent"
+          draggable
+          onDragStart={handleRotationDragStart}
+          onDragMove={handleRotationDragMove}
+          onDragEnd={handleRotationDragEnd}
+        />
+
         {/* Resize handles */}
         {handles.map((handle) => (
           <Group key={handle.key}>
@@ -445,16 +559,23 @@ const BoardShape = memo(function BoardShape({
     )
   }
 
+  // Position the Group at center (for rotation pivot), use offset to shift content
+  const centerX = (liveResize ? liveResize.x : obj.x) + displayW / 2
+  const centerY = (liveResize ? liveResize.y : obj.y) + displayH / 2
+
   return (
     <Group
       ref={shapeGroupRef}
-      x={displayX}
-      y={displayY}
+      x={centerX}
+      y={centerY}
+      offsetX={displayW / 2}
+      offsetY={displayH / 2}
+      rotation={effectiveRotation}
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
-      onTap={() => onSelect(obj.id)}
+      onTap={(e) => onSelect(obj.id, e as unknown as Konva.KonvaEventObject<MouseEvent>)}
       onDblClick={handleDblClick}
       onDblTap={() => setIsEditing(true)}
     >
