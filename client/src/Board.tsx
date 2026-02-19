@@ -907,7 +907,7 @@ const colorPickerStyle: React.CSSProperties = {
 
 const chatToggleBtnStyle: React.CSSProperties = {
   position: 'fixed',
-  bottom: 24,
+  bottom: 80,
   right: 24,
   width: 48,
   height: 48,
