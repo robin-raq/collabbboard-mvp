@@ -4,6 +4,7 @@ import type Konva from 'konva'
 import { useYjs } from './useYjs'
 import BoardShape from './BoardShape'
 import Connector from './Connector'
+import ChatPanel from './components/ChatPanel'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
@@ -41,6 +42,8 @@ export default function Board({ userName }: BoardProps) {
   // Rubber-band selection
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+  // AI Chat panel
+  const [showChat, setShowChat] = useState(false)
 
   // Derived: first selected ID (for single-object contexts like color picker)
   const selectedId = useMemo(
@@ -750,6 +753,25 @@ export default function Board({ userName }: BoardProps) {
           })}
         </Layer>
       </Stage>
+
+      {/* AI Chat toggle button */}
+      {!showChat && (
+        <button
+          onClick={() => setShowChat(true)}
+          style={chatToggleBtnStyle}
+          title="Open AI Assistant"
+        >
+          AI
+        </button>
+      )}
+
+      {/* AI Chat panel */}
+      {showChat && (
+        <ChatPanel
+          boardId="mvp-board-1"
+          onClose={() => setShowChat(false)}
+        />
+      )}
     </div>
   )
 }
@@ -881,4 +903,25 @@ const colorPickerStyle: React.CSSProperties = {
   borderRadius: 12,
   boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
   border: '1px solid #e5e7eb',
+}
+
+const chatToggleBtnStyle: React.CSSProperties = {
+  position: 'fixed',
+  bottom: 24,
+  right: 24,
+  width: 48,
+  height: 48,
+  borderRadius: '50%',
+  background: '#3B82F6',
+  color: '#fff',
+  border: 'none',
+  cursor: 'pointer',
+  fontSize: 14,
+  fontWeight: 700,
+  boxShadow: '0 4px 12px rgba(59,130,246,0.4)',
+  zIndex: 90,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontFamily: 'system-ui, sans-serif',
 }

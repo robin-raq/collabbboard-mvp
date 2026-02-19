@@ -28,22 +28,11 @@ import {
 // Helpers
 // ---------------------------------------------------------------------------
 
-interface BoardObject {
-  id: string
-  type: string
-  x: number
-  y: number
-  width: number
-  height: number
-  text?: string
-  fill: string
-  fontSize?: number
-  rotation?: number
-}
-
-function createTestMap(): Y.Map<BoardObject> {
+// Use `any` to avoid duplicating the BoardObject type from aiHandler.ts
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function createTestMap(): Y.Map<any> {
   const doc = new Y.Doc()
-  return doc.getMap('objects') as Y.Map<BoardObject>
+  return doc.getMap('objects')
 }
 
 // ---------------------------------------------------------------------------
