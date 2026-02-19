@@ -7,6 +7,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { PRODUCTION_HOST } from '../constants'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +44,7 @@ interface ChatPanelProps {
 function getApiUrl(): string {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
   if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
-    return 'https://raqdrobinson.com'
+    return `https://${PRODUCTION_HOST}`
   }
   return 'http://localhost:1234'
 }

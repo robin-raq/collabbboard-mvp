@@ -17,29 +17,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import * as Y from 'yjs'
 import { parseCommand } from './localParser.js'
-
-// ---------------------------------------------------------------------------
-// Types (mirror client/src/types.ts)
-// ---------------------------------------------------------------------------
-
-type ObjectType = 'sticky' | 'rect' | 'circle' | 'text' | 'frame' | 'line'
-
-interface BoardObject {
-  id: string
-  type: ObjectType
-  x: number
-  y: number
-  width: number
-  height: number
-  text?: string
-  fill: string
-  fontSize?: number
-  points?: number[]
-  fromId?: string
-  toId?: string
-  arrowEnd?: boolean
-  rotation?: number
-}
+import type { ObjectType, BoardObject } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
 // Anthropic Client (conditional — null when API key is not set)

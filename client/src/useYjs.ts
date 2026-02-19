@@ -31,6 +31,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import * as Y from 'yjs'
 import type { BoardObject } from './types'
 import { throttle } from './utils/throttle'
+import { MSG_YJS, MSG_AWARENESS, PRODUCTION_HOST } from './constants'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -53,14 +54,12 @@ function getWsUrl(): string {
   // Auto-detect: if served from a non-localhost origin, use same-origin WS
   if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost')) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//raqdrobinson.com`
+    return `${proto}//${PRODUCTION_HOST}`
   }
   return 'ws://localhost:1234'
 }
 
 const WS_URL = getWsUrl()
-const MSG_YJS = 0       // Yjs document update
-const MSG_AWARENESS = 1 // Cursor / presence info
 const REMOTE = 'remote' // Origin tag to prevent echo loops
 const DEBUG = import.meta.env.DEV // Gate all logs behind dev mode
 const CURSOR_THROTTLE_MS = 50 // Throttle cursor sends to 20/sec

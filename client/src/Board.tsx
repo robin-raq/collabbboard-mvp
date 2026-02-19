@@ -8,24 +8,26 @@ import ChatPanel from './components/ChatPanel'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
+import {
+  USER_COLORS,
+  SHAPE_COLORS,
+  ZOOM_SCALE_FACTOR,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_STEP,
+  GRID_SIZE,
+  SHAPE_DEFAULTS,
+  LINE_COLOR,
+} from './constants'
 
 const DEBUG = import.meta.env.DEV
-
-const COLORS = ['#EF4444', '#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EC4899']
-
-// Shape fill colors for the color picker
-const SHAPE_COLORS = [
-  '#FFEB3B', '#FFA726', '#EF5350', '#AB47BC',
-  '#42A5F5', '#26C6DA', '#66BB6A', '#8D6E63',
-  '#78909C', '#FFFFFF',
-]
 
 interface BoardProps {
   userName: string
 }
 
 export default function Board({ userName }: BoardProps) {
-  const userColor = COLORS[Math.abs(userName.charCodeAt(0)) % COLORS.length]
+  const userColor = USER_COLORS[Math.abs(userName.charCodeAt(0)) % USER_COLORS.length]
 
   const { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor } =
     useYjs('mvp-board-1', userName, userColor)
@@ -93,11 +95,10 @@ export default function Board({ userName }: BoardProps) {
       const pointer = stage.getPointerPosition()
       if (!pointer) return
 
-      const scaleBy = 1.08
       const oldScale = scale
       const newScale = e.evt.deltaY > 0
-        ? Math.max(0.1, oldScale / scaleBy)
-        : Math.min(5, oldScale * scaleBy)
+        ? Math.max(ZOOM_MIN, oldScale / ZOOM_SCALE_FACTOR)
+        : Math.min(ZOOM_MAX, oldScale * ZOOM_SCALE_FACTOR)
 
       const mousePointTo = {
         x: (pointer.x - stagePos.x) / oldScale,
@@ -213,7 +214,7 @@ export default function Board({ userName }: BoardProps) {
             y: minY,
             width: Math.abs(world.x - lineStart.x) || 1,
             height: Math.abs(world.y - lineStart.y) || 1,
-            fill: '#374151',
+            fill: LINE_COLOR,
             points: [
               lineStart.x - minX, lineStart.y - minY,
               world.x - minX, world.y - minY,
@@ -238,15 +239,7 @@ export default function Board({ userName }: BoardProps) {
 
       // Create shape at click position
       const id = crypto.randomUUID()
-      const defaults: Record<string, Partial<BoardObject>> = {
-        sticky: { width: 150, height: 150, fill: '#FFEB3B', text: 'New note' },
-        rect: { width: 120, height: 80, fill: '#42A5F5' },
-        circle: { width: 100, height: 100, fill: '#66BB6A' },
-        text: { width: 200, height: 40, fill: 'transparent', text: 'Text', fontSize: 18 },
-        frame: { width: 300, height: 200, fill: 'transparent', text: 'Frame' },
-      }
-
-      const d = defaults[activeTool] ?? defaults.rect
+      const d = SHAPE_DEFAULTS[activeTool] ?? SHAPE_DEFAULTS.rect
       const obj: BoardObject = {
         id,
         type: activeTool as BoardObject['type'],
@@ -397,11 +390,11 @@ export default function Board({ userName }: BoardProps) {
 
   // ---- Zoom controls ------------------------------------------------------
   const zoomIn = useCallback(() => {
-    setScale((s) => Math.min(5, s * 1.2))
+    setScale((s) => Math.min(ZOOM_MAX, s * ZOOM_STEP))
   }, [])
 
   const zoomOut = useCallback(() => {
-    setScale((s) => Math.max(0.1, s / 1.2))
+    setScale((s) => Math.max(ZOOM_MIN, s / ZOOM_STEP))
   }, [])
 
   const zoomReset = useCallback(() => {
@@ -449,8 +442,8 @@ export default function Board({ userName }: BoardProps) {
           position: 'absolute',
           inset: 0,
           backgroundImage: `radial-gradient(circle, #d1d5db 1px, transparent 1px)`,
-          backgroundSize: `${20 * scale}px ${20 * scale}px`,
-          backgroundPosition: `${stagePos.x % (20 * scale)}px ${stagePos.y % (20 * scale)}px`,
+          backgroundSize: `${GRID_SIZE * scale}px ${GRID_SIZE * scale}px`,
+          backgroundPosition: `${stagePos.x % (GRID_SIZE * scale)}px ${stagePos.y % (GRID_SIZE * scale)}px`,
           zIndex: 0,
         }}
       />
