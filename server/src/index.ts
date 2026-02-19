@@ -254,6 +254,27 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // POST /api/clear — Clear all objects from a board (dev/testing only)
+  if (req.method === 'POST' && req.url === '/api/clear') {
+    try {
+      const room = 'mvp-board-1'
+      const doc = await getOrCreateDoc(room)
+      const objectsMap = doc.getMap('objects')
+      const keys = Array.from(objectsMap.keys())
+      doc.transact(() => {
+        for (const key of keys) {
+          objectsMap.delete(key)
+        }
+      })
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ success: true, deleted: keys.length }))
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: String(err) }))
+    }
+    return
+  }
+
   // POST /api/ai — Process AI commands
   if (req.method === 'POST' && req.url === '/api/ai') {
     try {
