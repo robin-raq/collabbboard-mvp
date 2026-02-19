@@ -339,6 +339,7 @@ export async function processAICommand(
     return parseCommand(userMessage, doc)
   }
 
+  try {
   // Full Claude-powered path
   const objectsMap = doc.getMap('objects') as Y.Map<BoardObject>
   const boardContext = buildBoardContext(objectsMap)
@@ -414,5 +415,10 @@ export async function processAICommand(
   return {
     message: 'Completed the requested changes.',
     actions,
+  }
+  } catch (err) {
+    // Fallback to local parser on any API error (e.g., no credits, rate limit)
+    console.log('[AI] Claude API error, falling back to local parser:', String(err).slice(0, 120))
+    return parseCommand(userMessage, doc)
   }
 }
