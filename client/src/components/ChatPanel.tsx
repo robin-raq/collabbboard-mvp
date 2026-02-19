@@ -167,7 +167,7 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask the AI to create or modify objects\u2026"
+          placeholder="Ask the AI to create or modify objects…"
           aria-label="AI command input"
           style={textareaStyle}
           rows={2}
