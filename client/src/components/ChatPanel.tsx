@@ -329,6 +329,7 @@ const textareaStyle: React.CSSProperties = {
   fontSize: 13,
   fontFamily: 'inherit',
   lineHeight: 1.4,
+  outline: 'none',
   transition: 'border-color 0.15s, box-shadow 0.15s',
 }
 

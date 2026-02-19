@@ -90,6 +90,7 @@ const presenceStyle: React.CSSProperties = {
   borderRadius: 20,
   boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   border: '1px solid #e5e7eb',
+  fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
 }
 
 const avatarStyle: React.CSSProperties = {
@@ -103,4 +104,5 @@ const avatarStyle: React.CSSProperties = {
   fontWeight: 600,
   color: '#fff',
   flexShrink: 0,
+  fontFamily: "'DM Sans', system-ui, -apple-system, sans-serif",
 }
