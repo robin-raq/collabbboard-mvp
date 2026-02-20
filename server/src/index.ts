@@ -32,6 +32,12 @@ import {
   isAIMessageValid,
   MAX_WS_MESSAGE_SIZE,
 } from './security.js'
+import {
+  handleListBoards,
+  handleCreateBoard,
+  handleRenameBoard,
+  handleDeleteBoard,
+} from './routes/boards.js'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -237,8 +243,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   res.setHeader('Access-Control-Allow-Origin', corsOrigin)
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (corsOrigin !== '*') {
     res.setHeader('Vary', 'Origin')
   }
@@ -247,6 +253,39 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204)
     res.end()
+    return
+  }
+
+  // -----------------------------------------------------------------------
+  // Board CRUD REST API — /api/boards
+  // -----------------------------------------------------------------------
+
+  const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const pathname = url.pathname
+
+  if (pathname === '/api/boards' && req.method === 'GET') {
+    await handleListBoards(req, res)
+    return
+  }
+
+  if (pathname === '/api/boards' && req.method === 'POST') {
+    const body = await readBody(req)
+    await handleCreateBoard(req, res, body)
+    return
+  }
+
+  // PATCH /api/boards/:id — Rename
+  const patchMatch = pathname.match(/^\/api\/boards\/([a-f0-9-]+)$/)
+  if (patchMatch && req.method === 'PATCH') {
+    const body = await readBody(req)
+    await handleRenameBoard(req, res, patchMatch[1], body)
+    return
+  }
+
+  // DELETE /api/boards/:id — Delete
+  const deleteMatch = pathname.match(/^\/api\/boards\/([a-f0-9-]+)$/)
+  if (deleteMatch && req.method === 'DELETE') {
+    await handleDeleteBoard(req, res, deleteMatch[1])
     return
   }
 
@@ -330,7 +369,10 @@ const wss = new WebSocketServer({
 })
 
 wss.on('connection', async (ws, req) => {
-  const room = req.url?.slice(1) || 'default'
+  // Parse room name and optional auth token from URL: /<room>?token=<jwt>
+  const wsUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
+  const room = wsUrl.pathname.slice(1) || 'default'
+  const _wsToken = wsUrl.searchParams.get('token') // Auth token for future use
 
   // Validate room name
   if (!isValidRoomName(room)) {
