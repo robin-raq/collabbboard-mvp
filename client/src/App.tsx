@@ -17,9 +17,8 @@ function GuestBoard() {
     () => GUEST_NAMES[Math.floor(Math.random() * GUEST_NAMES.length)]
   )
   if (import.meta.env.DEV) console.log('[AUTH] Joined as guest:', guestName)
-  // Guest gets a random ephemeral board — no dashboard
-  const [guestBoardId] = useState(() => `guest-${crypto.randomUUID().slice(0, 8)}`)
-  return <Board userName={guestName} boardId={guestBoardId} />
+  // All guests share the same board so they can collaborate
+  return <Board userName={guestName} boardId="guest-sandbox" />
 }
 
 function AuthenticatedApp() {
