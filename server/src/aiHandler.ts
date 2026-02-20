@@ -82,6 +82,10 @@ const tools: Anthropic.Tool[] = [
           type: 'boolean',
           description: 'Set to true when placing objects intentionally inside frames or in a pre-calculated layout (e.g., SWOT, retro, kanban). Skips auto-repositioning so objects land at the exact requested coordinates.',
         },
+        parentId: {
+          type: 'string',
+          description: 'ID of the parent frame this object belongs to. When set, the object will move together with the frame when the frame is dragged. Always set this when placing objects inside a frame.',
+        },
       },
       required: ['type', 'x', 'y'],
     },
@@ -286,12 +290,15 @@ export function executeCreateObject(
 
   if (input.text !== undefined) obj.text = input.text as string
   if (input.fontSize !== undefined) obj.fontSize = input.fontSize as number
+  if (input.parentId !== undefined) obj.parentId = input.parentId as string
 
   objectsMap.set(id, obj)
-  return JSON.stringify({
+  const result: Record<string, unknown> = {
     success: true, id, type: obj.type, text: obj.text || '',
     x: pos.x, y: pos.y, width, height,
-  })
+  }
+  if (obj.parentId) result.parentId = obj.parentId
+  return JSON.stringify(result)
 }
 
 export function executeUpdateObject(
@@ -379,6 +386,7 @@ export function buildBoardContext(objectsMap: Y.Map<BoardObject>): string {
   const summary = objects.map((obj) => {
     let desc = `- ID: "${obj.id}" | Type: ${obj.type} | Position: (${obj.x}, ${obj.y}) | Size: ${obj.width}x${obj.height} | Color: ${obj.fill}`
     if (obj.text) desc += ` | Text: "${obj.text}"`
+    if (obj.parentId) desc += ` | Parent: "${obj.parentId}"`
     return desc
   })
 
@@ -420,6 +428,17 @@ IMPORTANT RULES:
 11. For SWOT analysis: create 4 frames in a 2x2 grid (Strengths top-left, Weaknesses top-right, Opportunities bottom-left, Threats bottom-right), then place sticky notes inside each frame using skipCollisionCheck: true.
 12. For retrospective boards: create 3 column frames ("What Went Well", "What Didn't Go Well", "Action Items"), then add sticky notes inside each using skipCollisionCheck: true.
 13. When arranging existing objects in a grid, use the moveObject tool to reposition them.
+
+**Placing objects INSIDE frames (critical for proper containment):**
+14. Frame labels render ABOVE the frame at y:-20, so the usable interior starts at the frame's y coordinate.
+15. ALWAYS inset objects by at least 15px from frame edges. Use this formula:
+    - Object x = frame.x + 15
+    - Object y = frame.y + 35 (extra top padding to clear the frame label)
+    - Max object width = frame.width - 30 (15px padding on each side)
+    - Max columns = floor((frame.width - 30) / (sticky_width + 10))
+16. ALWAYS set parentId to the frame's ID when placing objects inside a frame. This groups them so they move together when the frame is dragged.
+17. Example: Frame at (50, 50) size 400x300 → place stickies starting at (65, 85) with 200px wide stickies in 1 column, or use 170px wide stickies for 2 columns at x=65 and x=245.
+18. For SWOT with stickies: use frames of at least 450x350, place 180x120 stickies starting at frame.x+15, frame.y+35, with 10px gaps.
 
 **Response:**
 14. Always respond with a brief, friendly message describing what you did after using tools.`

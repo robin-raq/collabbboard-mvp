@@ -600,6 +600,98 @@ describe('createObject with skipCollisionCheck', () => {
 })
 
 // ---------------------------------------------------------------------------
+// createObject — parentId support (frame grouping)
+// ---------------------------------------------------------------------------
+
+describe('createObject with parentId', () => {
+  it('stores parentId on the created object when provided', () => {
+    const objects = createTestMap()
+    // Create a frame first
+    const frameResult = JSON.parse(
+      executeCreateObject(
+        { type: 'frame', x: 50, y: 50, width: 400, height: 300, text: 'Strengths' },
+        objects
+      )
+    )
+
+    // Create a sticky inside the frame with parentId
+    const stickyResult = JSON.parse(
+      executeCreateObject(
+        {
+          type: 'sticky', x: 70, y: 90, text: 'Good team',
+          skipCollisionCheck: true, parentId: frameResult.id,
+        },
+        objects
+      )
+    )
+
+    expect(stickyResult.success).toBe(true)
+    expect(stickyResult.parentId).toBe(frameResult.id)
+    const created = objects.get(stickyResult.id) as any
+    expect(created.parentId).toBe(frameResult.id)
+  })
+
+  it('does not set parentId when not provided', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 100, y: 100, text: 'Free floating' },
+        objects
+      )
+    )
+
+    const created = objects.get(result.id) as any
+    expect(created.parentId).toBeUndefined()
+    expect(result.parentId).toBeUndefined()
+  })
+
+  it('returns parentId in the result JSON', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 100, y: 100, text: 'Child', parentId: 'some-frame-id' },
+        objects
+      )
+    )
+
+    expect(result.parentId).toBe('some-frame-id')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// buildBoardContext — shows parent-child relationships
+// ---------------------------------------------------------------------------
+
+describe('buildBoardContext with parentId', () => {
+  it('includes parentId in the context when objects have a parent', () => {
+    const objects = createTestMap()
+    objects.set('frame-1', {
+      id: 'frame-1', type: 'frame', x: 50, y: 50,
+      width: 400, height: 300, fill: '#E8E8E8', text: 'My Frame',
+    })
+    objects.set('child-1', {
+      id: 'child-1', type: 'sticky', x: 70, y: 90,
+      width: 200, height: 150, fill: '#FFD700', text: 'Inside',
+      parentId: 'frame-1',
+    })
+
+    const context = buildBoardContext(objects)
+    expect(context).toContain('Parent: "frame-1"')
+  })
+
+  it('does not include parent info for objects without parentId', () => {
+    const objects = createTestMap()
+    objects.set('free-1', {
+      id: 'free-1', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700', text: 'Free',
+    })
+
+    const context = buildBoardContext(objects)
+    expect(context).not.toContain('Parent:')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // getBoardState tool (Bug Fix #2)
 // ---------------------------------------------------------------------------
 

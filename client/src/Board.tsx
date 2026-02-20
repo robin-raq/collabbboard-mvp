@@ -350,6 +350,13 @@ export default function Board({ userName, boardId }: BoardProps) {
         case 'backspace':
           if (selectedIds.size > 0) {
             for (const id of selectedIds) {
+              // If deleting a frame, also delete its children
+              const selected = objects.find((o) => o.id === id)
+              if (selected?.type === 'frame') {
+                for (const child of objects) {
+                  if (child.parentId === id) deleteObject(child.id)
+                }
+              }
               deleteObject(id)
             }
             setSelectedIds(new Set())
@@ -408,6 +415,31 @@ export default function Board({ userName, boardId }: BoardProps) {
     setStagePos({ x: 0, y: 0 })
   }, [])
 
+  // ---- Frame-aware update: when a frame moves, move its children too ------
+  const handleObjectUpdate = useCallback(
+    (id: string, updates: Partial<BoardObject>) => {
+      const obj = objects.find((o) => o.id === id)
+
+      // If this is a frame being repositioned, move all children by the same delta
+      if (obj && obj.type === 'frame' && updates.x !== undefined && updates.y !== undefined) {
+        const dx = updates.x - obj.x
+        const dy = updates.y - obj.y
+
+        if (dx !== 0 || dy !== 0) {
+          // Move all children whose parentId matches this frame
+          for (const child of objects) {
+            if (child.parentId === id) {
+              updateObject(child.id, { x: child.x + dx, y: child.y + dy })
+            }
+          }
+        }
+      }
+
+      updateObject(id, updates)
+    },
+    [objects, updateObject],
+  )
+
   // ---- Color picker (applies to all selected) -----------------------------
   const handleColorChange = useCallback(
     (color: string) => {
@@ -421,9 +453,18 @@ export default function Board({ userName, boardId }: BoardProps) {
 
   // ---- Toolbar callbacks --------------------------------------------------
   const handleDelete = useCallback(() => {
-    for (const id of selectedIds) deleteObject(id)
+    for (const id of selectedIds) {
+      // If deleting a frame, also delete its children
+      const obj = objects.find((o) => o.id === id)
+      if (obj?.type === 'frame') {
+        for (const child of objects) {
+          if (child.parentId === id) deleteObject(child.id)
+        }
+      }
+      deleteObject(id)
+    }
     setSelectedIds(new Set())
-  }, [selectedIds, deleteObject])
+  }, [selectedIds, objects, deleteObject])
 
   const handleColorToggle = useCallback(() => {
     setShowColorPicker((prev) => !prev)
@@ -551,7 +592,7 @@ export default function Board({ userName, boardId }: BoardProps) {
                 obj={obj}
                 isSelected={selectedIds.has(obj.id)}
                 onSelect={handleSelectOrConnect}
-                onUpdate={updateObject}
+                onUpdate={handleObjectUpdate}
                 allObjects={objects}
                 scale={scale}
               />
@@ -561,7 +602,7 @@ export default function Board({ userName, boardId }: BoardProps) {
                 obj={obj}
                 isSelected={selectedIds.has(obj.id)}
                 onSelect={handleSelectOrConnect}
-                onUpdate={updateObject}
+                onUpdate={handleObjectUpdate}
                 stageRef={stageRef}
                 scale={scale}
                 stagePosX={stagePos.x}
