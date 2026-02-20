@@ -292,6 +292,21 @@ export function executeCreateObject(
   if (input.fontSize !== undefined) obj.fontSize = input.fontSize as number
   if (input.parentId !== undefined) obj.parentId = input.parentId as string
 
+  // Auto-detect parent frame: if no explicit parentId and this isn't a frame,
+  // check if the object is fully contained inside an existing frame
+  if (!obj.parentId && obj.type !== 'frame') {
+    for (const [frameId, frameObj] of objectsMap.entries()) {
+      if (frameObj.type === 'frame') {
+        const insideX = obj.x >= frameObj.x && obj.x + obj.width <= frameObj.x + frameObj.width
+        const insideY = obj.y >= frameObj.y && obj.y + obj.height <= frameObj.y + frameObj.height
+        if (insideX && insideY) {
+          obj.parentId = frameId
+          break
+        }
+      }
+    }
+  }
+
   objectsMap.set(id, obj)
   const result: Record<string, unknown> = {
     success: true, id, type: obj.type, text: obj.text || '',

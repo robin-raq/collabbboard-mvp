@@ -631,11 +631,11 @@ describe('createObject with parentId', () => {
     expect(created.parentId).toBe(frameResult.id)
   })
 
-  it('does not set parentId when not provided', () => {
+  it('does not set parentId when not provided and object is outside all frames', () => {
     const objects = createTestMap()
     const result = JSON.parse(
       executeCreateObject(
-        { type: 'sticky', x: 100, y: 100, text: 'Free floating' },
+        { type: 'sticky', x: 800, y: 800, text: 'Free floating' },
         objects
       )
     )
@@ -643,6 +643,73 @@ describe('createObject with parentId', () => {
     const created = objects.get(result.id) as any
     expect(created.parentId).toBeUndefined()
     expect(result.parentId).toBeUndefined()
+  })
+
+  it('auto-detects parentId when object is placed inside a frame and no explicit parentId given', () => {
+    const objects = createTestMap()
+
+    // Create a frame first
+    const frameResult = JSON.parse(
+      executeCreateObject(
+        { type: 'frame', x: 50, y: 50, width: 400, height: 300, text: 'Strengths' },
+        objects
+      )
+    )
+
+    // Create a sticky fully inside the frame WITHOUT explicit parentId
+    const stickyResult = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 70, y: 90, text: 'Auto-detected parent', skipCollisionCheck: true },
+        objects
+      )
+    )
+
+    expect(stickyResult.success).toBe(true)
+    expect(stickyResult.parentId).toBe(frameResult.id)
+    const created = objects.get(stickyResult.id) as any
+    expect(created.parentId).toBe(frameResult.id)
+  })
+
+  it('does not auto-detect parentId for frame objects', () => {
+    const objects = createTestMap()
+
+    // Create a large frame
+    executeCreateObject(
+      { type: 'frame', x: 0, y: 0, width: 1000, height: 1000, text: 'Big Frame' },
+      objects
+    )
+
+    // Create a smaller frame inside — should NOT auto-detect parent
+    const innerFrame = JSON.parse(
+      executeCreateObject(
+        { type: 'frame', x: 50, y: 50, width: 200, height: 200, text: 'Inner Frame', skipCollisionCheck: true },
+        objects
+      )
+    )
+
+    const created = objects.get(innerFrame.id) as any
+    expect(created.parentId).toBeUndefined()
+  })
+
+  it('does not auto-detect parentId when object is only partially inside a frame', () => {
+    const objects = createTestMap()
+
+    // Create a frame
+    executeCreateObject(
+      { type: 'frame', x: 50, y: 50, width: 400, height: 300, text: 'Frame' },
+      objects
+    )
+
+    // Create a sticky that overflows the frame boundary (x: 400 + width: 200 = 600 > frame right: 450)
+    const stickyResult = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 400, y: 100, width: 200, text: 'Overflows', skipCollisionCheck: true },
+        objects
+      )
+    )
+
+    const created = objects.get(stickyResult.id) as any
+    expect(created.parentId).toBeUndefined()
   })
 
   it('returns parentId in the result JSON', () => {
