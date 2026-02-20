@@ -1,6 +1,9 @@
 import { useState } from 'react'
-import { ClerkProvider, SignedIn, SignedOut, SignIn, useUser } from '@clerk/clerk-react'
+import { Routes, Route } from 'react-router-dom'
+import { ClerkProvider, SignedIn, SignedOut, SignIn } from '@clerk/clerk-react'
 import Board from './Board'
+import Dashboard from './pages/Dashboard'
+import BoardPage from './pages/BoardPage'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
@@ -9,23 +12,23 @@ const GUEST_NAMES = [
   'Calm Dolphin', 'Quick Fox', 'Wise Owl', 'Happy Koala',
 ]
 
-function AuthenticatedBoard() {
-  const { user } = useUser()
-  const name =
-    [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() ||
-    user?.emailAddresses?.[0]?.emailAddress?.split('@')[0] ||
-    'User'
-
-  if (import.meta.env.DEV) console.log('[AUTH] Signed in as:', name)
-  return <Board userName={name} />
-}
-
 function GuestBoard() {
   const [guestName] = useState(
     () => GUEST_NAMES[Math.floor(Math.random() * GUEST_NAMES.length)]
   )
   if (import.meta.env.DEV) console.log('[AUTH] Joined as guest:', guestName)
-  return <Board userName={guestName} />
+  // Guest gets a random ephemeral board — no dashboard
+  const [guestBoardId] = useState(() => `guest-${crypto.randomUUID().slice(0, 8)}`)
+  return <Board userName={guestName} boardId={guestBoardId} />
+}
+
+function AuthenticatedApp() {
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />} />
+      <Route path="/board/:id" element={<BoardPage />} />
+    </Routes>
+  )
 }
 
 export default function App() {
@@ -97,7 +100,7 @@ export default function App() {
         </div>
       </SignedOut>
       <SignedIn>
-        <AuthenticatedBoard />
+        <AuthenticatedApp />
       </SignedIn>
     </ClerkProvider>
   )
