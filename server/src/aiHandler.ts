@@ -17,6 +17,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import * as Y from 'yjs'
 import { parseCommand } from './localParser.js'
+import { createTrace } from './langfuse.js'
 import type { ObjectType, BoardObject } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
@@ -307,21 +308,68 @@ export interface AIResponse {
   actions: ToolAction[]
 }
 
+export interface AICommandMetadata {
+  boardId?: string
+  userId?: string
+  sessionId?: string
+}
+
+const MODEL_NAME = 'claude-sonnet-4-20250514'
+
 export async function processAICommand(
   userMessage: string,
-  doc: Y.Doc
+  doc: Y.Doc,
+  metadata?: AICommandMetadata
 ): Promise<AIResponse> {
+  const objectsMap = doc.getMap('objects') as Y.Map<BoardObject>
+  const objectCount = objectsMap.size
+
+  // Create a trace for this entire AI command
+  const trace = createTrace({
+    name: 'ai-command',
+    userId: metadata?.userId,
+    sessionId: metadata?.sessionId,
+    input: userMessage,
+    metadata: {
+      boardId: metadata?.boardId ?? 'unknown',
+      objectCount: String(objectCount),
+    },
+  })
+
   // Fallback: use local parser when Anthropic API is not available
   if (!anthropic) {
     console.log('[AI] Using local parser for command:', userMessage.slice(0, 80))
-    return parseCommand(userMessage, doc)
+
+    const parserSpan = trace.span({
+      name: 'local-parser',
+      input: { message: userMessage },
+    })
+
+    const result = parseCommand(userMessage, doc)
+
+    parserSpan.update({
+      output: { message: result.message, actionCount: result.actions.length },
+    })
+    parserSpan.end()
+
+    trace.update({
+      output: { message: result.message, actionCount: result.actions.length },
+      metadata: {
+        path: 'local-parser',
+        boardId: metadata?.boardId ?? 'unknown',
+        objectCount: String(objectCount),
+      },
+    })
+
+    return result
   }
 
   try {
   // Full Claude-powered path
-  const objectsMap = doc.getMap('objects') as Y.Map<BoardObject>
   const boardContext = buildBoardContext(objectsMap)
   const actions: ToolAction[] = []
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
 
   // Build initial messages
   const messages: Anthropic.MessageParam[] = [
@@ -333,14 +381,39 @@ export async function processAICommand(
 
   // Multi-turn tool-use loop
   let maxTurns = 10
+  let turnNumber = 0
   while (maxTurns-- > 0) {
+    turnNumber++
+
+    // Trace this LLM generation
+    const generation = trace.generation({
+      name: `claude-call-${turnNumber}`,
+      model: MODEL_NAME,
+      input: messages,
+      modelParameters: { max_tokens: 4096 },
+    })
+
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: MODEL_NAME,
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       tools,
       messages,
     })
+
+    // Track token usage
+    const inputTokens = response.usage?.input_tokens ?? 0
+    const outputTokens = response.usage?.output_tokens ?? 0
+    totalInputTokens += inputTokens
+    totalOutputTokens += outputTokens
+
+    // Update generation with response data
+    generation.update({
+      output: response.content,
+      usage: { input: inputTokens, output: outputTokens },
+      metadata: { stopReason: response.stop_reason },
+    })
+    generation.end()
 
     // Collect text response parts
     let textResponse = ''
@@ -350,12 +423,21 @@ export async function processAICommand(
       if (block.type === 'text') {
         textResponse += block.text
       } else if (block.type === 'tool_use') {
+        // Trace tool execution
+        const toolSpan = trace.span({
+          name: `tool-${block.name}`,
+          input: block.input,
+        })
+
         // Execute the tool
         const result = executeTool(
           block.name,
           block.input as Record<string, unknown>,
           objectsMap
         )
+
+        toolSpan.update({ output: JSON.parse(result) })
+        toolSpan.end()
 
         actions.push({
           tool: block.name,
@@ -373,10 +455,25 @@ export async function processAICommand(
 
     // If no tool calls, we're done
     if (response.stop_reason === 'end_turn' || toolResultBlocks.length === 0) {
-      return {
+      const aiResponse = {
         message: textResponse || 'Done! The board has been updated.',
         actions,
       }
+
+      trace.update({
+        output: { message: aiResponse.message, actionCount: actions.length },
+        metadata: {
+          path: 'claude-api',
+          boardId: metadata?.boardId ?? 'unknown',
+          objectCount: String(objectCount),
+          totalInputTokens: String(totalInputTokens),
+          totalOutputTokens: String(totalOutputTokens),
+          totalTurns: String(turnNumber),
+          toolCallCount: String(actions.length),
+        },
+      })
+
+      return aiResponse
     }
 
     // Continue the conversation with tool results
@@ -390,11 +487,38 @@ export async function processAICommand(
     })
   }
 
-  return {
+  const aiResponse = {
     message: 'Completed the requested changes.',
     actions,
   }
+
+  trace.update({
+    output: { message: aiResponse.message, actionCount: actions.length },
+    metadata: {
+      path: 'claude-api',
+      boardId: metadata?.boardId ?? 'unknown',
+      objectCount: String(objectCount),
+      totalInputTokens: String(totalInputTokens),
+      totalOutputTokens: String(totalOutputTokens),
+      totalTurns: String(turnNumber),
+      toolCallCount: String(actions.length),
+      maxTurnsReached: 'true',
+    },
+  })
+
+  return aiResponse
   } catch (err) {
+    // Update trace with error info before falling back
+    trace.update({
+      output: { error: String(err).slice(0, 200) },
+      metadata: {
+        path: 'claude-api-fallback',
+        boardId: metadata?.boardId ?? 'unknown',
+        objectCount: String(objectCount),
+        error: String(err).slice(0, 200),
+      },
+    })
+
     // Fallback to local parser on any API error (e.g., no credits, rate limit)
     console.log('[AI] Claude API error, falling back to local parser:', String(err).slice(0, 120))
     return parseCommand(userMessage, doc)

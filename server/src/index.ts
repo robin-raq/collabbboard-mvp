@@ -22,6 +22,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import * as Y from 'yjs'
 import { supabase } from './db/supabase.js'
 import { processAICommand } from './aiHandler.js'
+import { flushTraces, isLangfuseEnabled } from './langfuse.js'
 import {
   isOriginAllowed,
   getCorsOrigin,
@@ -255,6 +256,7 @@ const server = http.createServer(async (req, res) => {
       status: 'ok',
       rooms: docs.size,
       persistence: supabase ? 'supabase' : 'none',
+      langfuseEnabled: isLangfuseEnabled(),
     }))
     return
   }
@@ -297,7 +299,7 @@ const server = http.createServer(async (req, res) => {
 
       console.log(`[AI] Processing command for room ${roomId}: "${message.slice(0, 80)}"`)
 
-      const result = await processAICommand(message, doc)
+      const result = await processAICommand(message, doc, { boardId: roomId })
 
       // Mark room as dirty so the snapshot interval will save it
       dirtyRooms.add(roomId)
@@ -502,9 +504,40 @@ function startEvictionInterval(): void {
 startSnapshotInterval()
 startEvictionInterval()
 
+// ---------------------------------------------------------------------------
+// Graceful Shutdown — flush Langfuse traces before exit
+// ---------------------------------------------------------------------------
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  console.log(`[Server] Received ${signal}, shutting down gracefully...`)
+
+  // Flush pending Langfuse traces
+  try {
+    await flushTraces()
+    console.log('[Langfuse] Flushed pending traces')
+  } catch (err) {
+    console.error('[Langfuse] Error flushing traces:', err)
+  }
+
+  // Save dirty rooms before exiting
+  for (const room of dirtyRooms) {
+    const doc = docs.get(room)
+    if (doc) {
+      await saveDocToSupabase(room, doc)
+    }
+  }
+  dirtyRooms.clear()
+
+  process.exit(0)
+}
+
+process.on('SIGTERM', () => { gracefulShutdown('SIGTERM') })
+process.on('SIGINT', () => { gracefulShutdown('SIGINT') })
+
 server.listen(PORT, () => {
   console.log(`[WS] y-websocket server running on :${PORT}`)
   console.log(`[WS] Persistence: ${supabase ? 'Supabase' : 'DISABLED (no env vars)'}`)
+  console.log(`[WS] Langfuse: ${isLangfuseEnabled() ? 'ENABLED' : 'DISABLED (no env vars)'}`)
   console.log(`[WS] Snapshot interval: ${SNAPSHOT_INTERVAL_MS / 1000}s`)
   console.log(`[WS] Room eviction: idle >${ROOM_IDLE_TIMEOUT_MS / 60_000}m, check every ${EVICTION_CHECK_MS / 60_000}m`)
 })
