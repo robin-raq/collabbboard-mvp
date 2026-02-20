@@ -344,6 +344,13 @@ describe('isComplexCommand', () => {
     expect(isComplexCommand('Build a user journey map')).toBe(true)
   })
 
+  it('returns true for chart/diagram commands', () => {
+    expect(isComplexCommand('draw me a bar chart')).toBe(true)
+    expect(isComplexCommand('create a pie chart of sales')).toBe(true)
+    expect(isComplexCommand('make a diagram showing the flow')).toBe(true)
+    expect(isComplexCommand('visualize the data')).toBe(true)
+  })
+
   it('returns true for long commands (>120 chars)', () => {
     expect(isComplexCommand('I need you to create a board with multiple sections for our team planning session with columns for each team member')).toBe(true)
   })

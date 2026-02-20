@@ -323,7 +323,7 @@ const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
  * Returns the model name (currently same model, but allows easy swap to Haiku
  * when available on the API plan).
  */
-const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?)\b/i
+const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?|chart|diagram|visuali[sz]e|bar\s*chart|pie\s*chart|map|board)\b/i
 
 export function selectModel(userMessage: string): string {
   if (COMPLEX_PATTERNS.test(userMessage) || userMessage.length > 120) {
