@@ -83,7 +83,7 @@ export interface RemoteCursor {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useYjs(roomId: string, userName: string, userColor: string) {
+export function useYjs(roomId: string, userName: string, userColor: string, authToken?: string) {
   // Map-based state: only changed objects cause re-renders when used with React.memo
   const [objectMap, setObjectMap] = useState<Map<string, BoardObject>>(new Map())
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([])
@@ -128,7 +128,8 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
     yDocRef.current = yDoc
     yMapRef.current = yMap
 
-    const wsUrl = `${WS_URL}/${roomId}`
+    const tokenParam = authToken ? `?token=${encodeURIComponent(authToken)}` : ''
+    const wsUrl = `${WS_URL}/${roomId}${tokenParam}`
     if (DEBUG) console.log('[YJS] Connecting to', wsUrl)
 
     let ws: WebSocket
@@ -293,7 +294,7 @@ export function useYjs(roomId: string, userName: string, userColor: string) {
       yMapRef.current = null
       wsRef.current = null
     }
-  }, [roomId, userName, userColor])
+  }, [roomId, userName, userColor, authToken])
 
   // ---- CRUD operations (mutate Y.Map → auto-synced) ----------------------
 
