@@ -20,8 +20,6 @@ export interface AuthUser {
 // Core auth function
 // ---------------------------------------------------------------------------
 
-const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY ?? ''
-
 /**
  * Authenticate an incoming HTTP request by validating the Clerk JWT.
  * Returns { userId } on success, null on failure.
@@ -35,13 +33,15 @@ export async function authenticateRequest(
   const token = authHeader.slice(7) // Remove 'Bearer '
   if (!token.trim()) return null
 
+  const secretKey = process.env.CLERK_SECRET_KEY ?? ''
+
   try {
-    if (!CLERK_SECRET_KEY) {
+    if (!secretKey) {
       console.error('[auth] CLERK_SECRET_KEY is empty — cannot verify tokens')
       return null
     }
     const payload = await verifyToken(token, {
-      secretKey: CLERK_SECRET_KEY,
+      secretKey,
     })
     if (!payload?.sub) {
       console.error('[auth] Token verified but no sub claim found')

@@ -32,6 +32,9 @@ function fakeRequest(authHeader?: string): { headers: Record<string, string | un
 // Tests
 // ---------------------------------------------------------------------------
 
+// Ensure CLERK_SECRET_KEY is set so the guard clause doesn't short-circuit
+process.env.CLERK_SECRET_KEY = 'sk_test_fake_key_for_testing'
+
 describe('authenticateRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
