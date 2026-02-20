@@ -78,6 +78,10 @@ const tools: Anthropic.Tool[] = [
           type: 'number',
           description: 'Font size for text objects (default 14)',
         },
+        skipCollisionCheck: {
+          type: 'boolean',
+          description: 'Set to true when placing objects intentionally inside frames or in a pre-calculated layout (e.g., SWOT, retro, kanban). Skips auto-repositioning so objects land at the exact requested coordinates.',
+        },
       },
       required: ['type', 'x', 'y'],
     },
@@ -115,6 +119,16 @@ const tools: Anthropic.Tool[] = [
         },
       },
       required: ['id'],
+    },
+  },
+  {
+    name: 'getBoardState',
+    description:
+      'Get a snapshot of all current objects on the board with their positions, sizes, colors, and text. Call this BEFORE creating complex layouts (SWOT, retro, kanban) to see what already exists and avoid overlaps. Call this AFTER placing multiple objects to verify they landed in the right positions.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
     },
   },
   {
@@ -254,8 +268,10 @@ export function executeCreateObject(
   const width = (input.width as number) || defaults.width
   const height = (input.height as number) || defaults.height
 
-  // Find non-overlapping position
-  const pos = findOpenPosition(requestedX, requestedY, width, height, objectsMap)
+  // Find non-overlapping position (skip when intentionally placing inside frames/layouts)
+  const pos = input.skipCollisionCheck
+    ? { x: requestedX, y: requestedY }
+    : findOpenPosition(requestedX, requestedY, width, height, objectsMap)
 
   const obj: BoardObject = {
     id,
@@ -272,7 +288,10 @@ export function executeCreateObject(
   if (input.fontSize !== undefined) obj.fontSize = input.fontSize as number
 
   objectsMap.set(id, obj)
-  return JSON.stringify({ success: true, id, type: obj.type, text: obj.text || '' })
+  return JSON.stringify({
+    success: true, id, type: obj.type, text: obj.text || '',
+    x: pos.x, y: pos.y, width, height,
+  })
 }
 
 export function executeUpdateObject(
@@ -318,6 +337,12 @@ export function executeMoveObject(
   return JSON.stringify({ success: true, id, x: updated.x, y: updated.y })
 }
 
+export function executeGetBoardState(
+  objectsMap: Y.Map<BoardObject>
+): string {
+  return buildBoardContext(objectsMap)
+}
+
 function executeTool(
   toolName: string,
   input: Record<string, unknown>,
@@ -330,6 +355,8 @@ function executeTool(
       return executeUpdateObject(input, objectsMap)
     case 'moveObject':
       return executeMoveObject(input, objectsMap)
+    case 'getBoardState':
+      return executeGetBoardState(objectsMap)
     default:
       return JSON.stringify({ success: false, error: `Unknown tool: ${toolName}` })
   }
@@ -355,28 +382,47 @@ export function buildBoardContext(objectsMap: Y.Map<BoardObject>): string {
     return desc
   })
 
-  return `Current board objects (${objects.length} total):\n${summary.join('\n')}`
+  // Compute bounding box so the AI knows where free space starts
+  const maxRight = Math.max(...objects.map((o) => o.x + o.width))
+  const maxBottom = Math.max(...objects.map((o) => o.y + o.height))
+
+  return `Current board objects (${objects.length} total):\n${summary.join('\n')}\n\nOccupied area bounding box: x:0-${maxRight}, y:0-${maxBottom}. Place new objects AFTER x:${maxRight + 30} (to the right) or AFTER y:${maxBottom + 30} (below) to avoid overlaps.`
 }
 
 // ---------------------------------------------------------------------------
 // System Prompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are an AI assistant that helps users work with a collaborative whiteboard called CollabBoard. You can create, update, and move objects on the board.
+const SYSTEM_PROMPT = `You are an AI assistant that helps users work with a collaborative whiteboard called CollabBoard. You can create, update, move objects, and inspect the board state.
+
+CRITICAL — NEVER OVERLAP EXISTING OBJECTS:
+Before placing ANY new objects, you MUST look at the board context provided with the user's message. Calculate the bounding box of all existing objects (find the max x+width and max y+height). Place new objects OUTSIDE that bounding box — either to the right of or below existing content. NEVER place new objects at coordinates that overlap with existing ones.
+
+Example: If the board has objects spanning x:50-600, y:50-700, place new objects starting at x:650 (to the right) or y:750 (below).
 
 IMPORTANT RULES:
-1. Use the provided tools to make changes to the board. Always use tools — never just describe what you would do.
-2. For creating objects, keep positions within the visible area (x: 50-1100, y: 50-700).
-3. AVOID OVERLAPPING: Before placing new objects, check the board context for existing object positions. Choose coordinates that do not overlap with existing objects. Leave at least 20px gap between objects. The server will auto-nudge overlapping objects, but you should try to pick clear spots first.
-4. When creating grids or layouts, space objects evenly with ~20-30px gaps.
-4. For "sticky note" requests, use type "sticky" with default size 200x150.
-5. For retrospective or template boards, create frames as containers first, then add sticky notes inside them.
-6. Common sticky note colors: #FFD700 (yellow), #98FB98 (green), #87CEEB (blue), #FFB6C1 (pink), #DDA0DD (purple), #FFA07A (orange).
-7. When asked to change a property of "the sticky note" or similar, look at the board context to find the matching object by type or text.
-8. When creating grids, calculate positions carefully. For a 2x3 grid with 200x150 sticky notes and 20px gaps: row spacing = 150 + 20 = 170px, column spacing = 200 + 20 = 220px.
-9. For retrospective boards, create 3 columns with frame containers labeled "What Went Well", "What Didn't Go Well", and "Action Items", each containing 2-3 empty sticky notes.
-10. When arranging existing objects in a grid, use the moveObject tool to reposition them.
-11. Always respond with a brief, friendly message describing what you did after using tools.`
+
+**Board awareness:**
+1. The board context is provided with every command. ALWAYS read it carefully before placing objects.
+2. Use getBoardState to refresh your view after placing multiple objects.
+3. The createObject tool returns the ACTUAL position (x, y) of each object — check these values to confirm placement.
+
+**Object placement:**
+4. Use the provided tools to make changes to the board. Always use tools — never just describe what you would do.
+5. Keep positions within the visible area (x: 50-1200, y: 50-900). The canvas is scrollable so going beyond 1200x900 is OK.
+6. For "sticky note" requests, use type "sticky" with default size 200x150.
+7. Common sticky note colors: #FFD700 (yellow), #98FB98 (green), #87CEEB (blue), #FFB6C1 (pink), #DDA0DD (purple), #FFA07A (orange).
+8. When asked to change a property of "the sticky note" or similar, look at the board context to find the matching object by type or text.
+
+**Structured layouts (SWOT, retro, kanban, grids, pros/cons):**
+9. For structured layouts, ALWAYS use skipCollisionCheck: true on each createObject call. This prevents the auto-nudger from pushing objects outside their intended container. Plan your coordinates carefully first.
+10. When creating grids, calculate positions carefully. For a 2x3 grid with 200x150 sticky notes and 20px gaps: row spacing = 150 + 20 = 170px, column spacing = 200 + 20 = 220px.
+11. For SWOT analysis: create 4 frames in a 2x2 grid (Strengths top-left, Weaknesses top-right, Opportunities bottom-left, Threats bottom-right), then place sticky notes inside each frame using skipCollisionCheck: true.
+12. For retrospective boards: create 3 column frames ("What Went Well", "What Didn't Go Well", "Action Items"), then add sticky notes inside each using skipCollisionCheck: true.
+13. When arranging existing objects in a grid, use the moveObject tool to reposition them.
+
+**Response:**
+14. Always respond with a brief, friendly message describing what you did after using tools.`
 
 // ---------------------------------------------------------------------------
 // Main Entry Point
@@ -402,7 +448,7 @@ const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
  * Returns the model name (currently same model, but allows easy swap to Haiku
  * when available on the API plan).
  */
-const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?|chart|diagram|visuali[sz]e|bar\s*chart|pie\s*chart|map|board)\b/i
+const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?|chart|diagram|visuali[sz]e|bar\s*chart|pie\s*chart|map|board|pros?\s*(and|&)\s*cons?|compare|comparison|list\s+of|brainstorm|matrix|timeline|roadmap|workflow|priorit|categor)\b/i
 
 export function selectModel(userMessage: string): string {
   if (COMPLEX_PATTERNS.test(userMessage) || userMessage.length > 120) {
@@ -485,8 +531,8 @@ export async function processAICommand(
     },
   ]
 
-  // Multi-turn tool-use loop (cap at 3 for simple, 10 for complex)
-  let maxTurns = complex ? 10 : 3
+  // Multi-turn tool-use loop (cap at 3 for simple, 15 for complex to allow getBoardState checks)
+  let maxTurns = complex ? 15 : 3
   let turnNumber = 0
   while (maxTurns-- > 0) {
     turnNumber++

@@ -9,6 +9,8 @@
  *  - updateObject: modifies existing object properties
  *  - moveObject: repositions existing objects
  *  - buildBoardContext: generates correct board snapshot for system prompt
+ *  - executeGetBoardState: returns current board state as formatted string
+ *  - skipCollisionCheck: allows intentional placement without auto-nudging
  */
 
 import { describe, it, expect } from 'vitest'
@@ -21,6 +23,7 @@ import {
   executeCreateObject,
   executeUpdateObject,
   executeMoveObject,
+  executeGetBoardState,
   buildBoardContext,
 } from '../aiHandler.js'
 
@@ -460,5 +463,192 @@ describe('findOpenPosition', () => {
     const gapY = pos.y >= 250 ? pos.y - 250 : 100 - (pos.y + 150)
     const hasGap = gapX >= padding || gapY >= padding
     expect(hasGap).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createObject — returns actual position in result (Bug Fix #1)
+// ---------------------------------------------------------------------------
+
+describe('createObject result includes actual position', () => {
+  it('returns x, y, width, height in the result JSON', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 100, y: 200, text: 'Test' },
+        objects
+      )
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.x).toBe(100)
+    expect(result.y).toBe(200)
+    expect(result.width).toBe(200) // sticky default
+    expect(result.height).toBe(150) // sticky default
+  })
+
+  it('returns nudged position when auto-repositioned', () => {
+    const objects = createTestMap()
+    // Place a blocker at (100, 100)
+    objects.set('blocker', {
+      id: 'blocker', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+
+    // Try to place at same position — should be nudged
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 100, y: 100, text: 'Nudged' },
+        objects
+      )
+    )
+
+    expect(result.success).toBe(true)
+    // Result should reflect the ACTUAL position, not the requested one
+    expect(result.x !== 100 || result.y !== 100).toBe(true)
+    // Verify the result matches what's actually in the Y.Map
+    const created = objects.get(result.id) as any
+    expect(result.x).toBe(created.x)
+    expect(result.y).toBe(created.y)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createObject — skipCollisionCheck (Bug Fix #3)
+// ---------------------------------------------------------------------------
+
+describe('createObject with skipCollisionCheck', () => {
+  it('places object at exact requested position when skipCollisionCheck is true', () => {
+    const objects = createTestMap()
+    // Place a frame at (50, 50)
+    objects.set('frame-1', {
+      id: 'frame-1', type: 'frame', x: 50, y: 50,
+      width: 400, height: 300, fill: '#E8E8E8',
+    })
+
+    // Place a sticky INSIDE the frame with skipCollisionCheck
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 70, y: 100, text: 'Inside frame', skipCollisionCheck: true },
+        objects
+      )
+    )
+
+    expect(result.success).toBe(true)
+    // Should be at the EXACT requested position — no nudging
+    expect(result.x).toBe(70)
+    expect(result.y).toBe(100)
+    const created = objects.get(result.id) as any
+    expect(created.x).toBe(70)
+    expect(created.y).toBe(100)
+  })
+
+  it('still nudges when skipCollisionCheck is false or omitted', () => {
+    const objects = createTestMap()
+    objects.set('blocker', {
+      id: 'blocker', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+
+    // Without skipCollisionCheck — should be nudged
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 100, y: 100, text: 'Should nudge' },
+        objects
+      )
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.x !== 100 || result.y !== 100).toBe(true)
+  })
+
+  it('allows multiple objects at intentional positions inside a frame', () => {
+    const objects = createTestMap()
+    objects.set('frame', {
+      id: 'frame', type: 'frame', x: 50, y: 50,
+      width: 500, height: 400, fill: '#E8E8E8',
+    })
+
+    // Place 3 stickies inside the frame in a column
+    const r1 = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 70, y: 80, text: 'Item 1', skipCollisionCheck: true },
+        objects
+      )
+    )
+    const r2 = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 70, y: 250, text: 'Item 2', skipCollisionCheck: true },
+        objects
+      )
+    )
+    const r3 = JSON.parse(
+      executeCreateObject(
+        { type: 'sticky', x: 290, y: 80, text: 'Item 3', skipCollisionCheck: true },
+        objects
+      )
+    )
+
+    // All should be at their exact requested positions
+    expect(r1.x).toBe(70)
+    expect(r1.y).toBe(80)
+    expect(r2.x).toBe(70)
+    expect(r2.y).toBe(250)
+    expect(r3.x).toBe(290)
+    expect(r3.y).toBe(80)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// getBoardState tool (Bug Fix #2)
+// ---------------------------------------------------------------------------
+
+describe('executeGetBoardState', () => {
+  it('returns empty board message when no objects exist', () => {
+    const objects = createTestMap()
+    const result = executeGetBoardState(objects)
+    expect(result).toContain('empty')
+  })
+
+  it('returns formatted board state with all objects', () => {
+    const objects = createTestMap()
+    objects.set('s1', {
+      id: 's1', type: 'sticky', x: 100, y: 200,
+      width: 200, height: 150, text: 'Research', fill: '#FFD700',
+    })
+    objects.set('r1', {
+      id: 'r1', type: 'rect', x: 400, y: 100,
+      width: 150, height: 100, fill: '#87CEEB',
+    })
+
+    const result = executeGetBoardState(objects)
+    expect(result).toContain('2 total')
+    expect(result).toContain('s1')
+    expect(result).toContain('sticky')
+    expect(result).toContain('Research')
+    expect(result).toContain('r1')
+    expect(result).toContain('rect')
+    expect(result).toContain('(100, 200)')
+    expect(result).toContain('(400, 100)')
+  })
+
+  it('reflects objects created after initial board state', () => {
+    const objects = createTestMap()
+
+    // Initially empty
+    const before = executeGetBoardState(objects)
+    expect(before).toContain('empty')
+
+    // Create an object
+    executeCreateObject(
+      { type: 'sticky', x: 100, y: 100, text: 'New item' },
+      objects
+    )
+
+    // Now getBoardState should show the new object
+    const after = executeGetBoardState(objects)
+    expect(after).toContain('1 total')
+    expect(after).toContain('New item')
+    expect(after).not.toContain('empty')
   })
 })
