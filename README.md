@@ -1,80 +1,108 @@
-# CollabBoard MVP
+# CollabBoard
 
-A real-time collaborative whiteboard built in under 4 hours. Multiple users share an infinite canvas where they can create, move, and edit sticky notes and shapes — all synced instantly via Yjs CRDTs over WebSockets.
+A real-time collaborative whiteboard with AI assistance. Multiple users share an infinite canvas where they can create, move, resize, and rotate shapes — all synced instantly via Yjs CRDTs over WebSockets. An AI chat agent can create and manipulate board objects on command.
 
 **Live:** [collabboard.raqdrobinson.com](https://collabboard.raqdrobinson.com)
 
 ## Features
 
-- **Infinite canvas** — pan (drag) and zoom (scroll wheel) with no boundaries
-- **Sticky notes** — create, drag, and double-click to edit text
-- **Rectangles** — drag-and-drop shape primitives
-- **Real-time sync** — every mutation syncs instantly to all connected clients
-- **Multiplayer cursors** — see other users' cursor positions with name labels
-- **Presence awareness** — live count of who's online
-- **Authentication** — Clerk sign-in with Google/email, or guest access
-- **Console-driven TDD** — every mutation logs to the browser console for instant feedback
+- **Infinite canvas** — pan and zoom (0.1x–5x) with viewport culling for performance
+- **7 shape types** — sticky notes, rectangles, circles, text, frames, lines, arrows
+- **Real-time sync** — every mutation syncs instantly to all connected clients via Yjs CRDTs
+- **AI chat agent** — natural language commands to create, update, and arrange objects
+- **Multi-select** — shift-click, rubber-band selection, Cmd+A, group drag
+- **Rotation** — center-pivot rotation with handle UI on all shapes
+- **Inline text editing** — double-click sticky notes to edit in place
+- **Multiplayer cursors** — color-coded remote cursors with name labels
+- **Presence awareness** — live connection status and user avatars
+- **Authentication** — Clerk sign-in (Google OAuth) or guest access
+- **State persistence** — Supabase snapshots every 30 seconds, survives server restarts
+- **Keyboard shortcuts** — V/S/R/C/T/F/L/A tools, Delete, Ctrl+A/D, Escape
+- **Performance optimized** — render budget caps at 150 objects, React.memo with primitive props
 
 ## Architecture
 
 ```
-┌─────────────────────┐         WebSocket (wss://)         ┌──────────────────┐
-│   React + Konva.js  │ ◄──────────────────────────────► │  Node.js + ws    │
-│   (Vercel)          │    Yjs binary updates + awareness  │  (Railway)       │
-│                     │                                     │                  │
-│  Y.Doc ◄─► Y.Map   │                                     │  Y.Doc per room  │
-│  useYjs.ts hook     │                                     │  ~90 lines       │
-│  Clerk auth         │                                     │  No database     │
-└─────────────────────┘                                     └──────────────────┘
+┌─────────────────────┐       WebSocket (wss://)       ┌──────────────────────┐
+│   React + Konva.js  │ ◄────────────────────────────► │  Node.js + ws        │
+│   (Vercel)          │   Yjs binary + awareness msgs   │  (Railway)           │
+│                     │                                  │                      │
+│  Y.Doc ◄─► Y.Map   │       POST /api/ai               │  Y.Doc per room      │
+│  useYjs.ts hook     │ ─────────────────────────────► │  AI handler (Claude)  │
+│  Clerk auth         │                                  │  Supabase snapshots   │
+└─────────────────────┘                                  └──────────┬───────────┘
+                                                                    │
+                                                         ┌──────────▼───────────┐
+                                                         │  Supabase PostgreSQL  │
+                                                         │  board_snapshots      │
+                                                         └──────────────────────┘
 ```
 
-| Layer      | Technology                  | Why                              |
-|------------|-----------------------------|----------------------------------|
-| Frontend   | React 19 + Vite + TypeScript| Fast dev, type safety            |
-| Canvas     | Konva.js + react-konva      | Pan/zoom/drag built-in           |
-| Real-time  | Yjs + custom WebSocket      | CRDT = no merge conflicts        |
-| Auth       | Clerk                       | 15-min setup, Google OAuth free  |
-| Backend    | Node.js + ws               | ~90 lines, just a WS relay       |
-| Database   | None (in-memory Yjs)        | MVP speed; persistence = Week 2  |
-| Deployment | Vercel + Railway            | Free tier, zero cost             |
+| Layer      | Technology                   | Purpose                                |
+|------------|------------------------------|----------------------------------------|
+| Frontend   | React 19 + Vite + TypeScript | Fast dev, type safety, HMR             |
+| Canvas     | Konva.js + react-konva       | Pan/zoom/drag/rotate built-in          |
+| Real-time  | Yjs + custom WebSocket       | CRDT = no merge conflicts              |
+| AI         | Anthropic Claude (Sonnet)    | Tool-calling agent with 3 tools        |
+| Auth       | Clerk                        | Google OAuth + guest mode              |
+| Backend    | Node.js + ws                 | WebSocket relay + AI endpoint          |
+| Database   | Supabase PostgreSQL          | Board state persistence                |
+| Deployment | Vercel + Railway             | Free tier, auto-deploy on push         |
 
 ## Project Structure
 
 ```
 collabboard-mvp/
-├── client/                     # Vite React app (deployed to Vercel)
-│   ├── src/
-│   │   ├── App.tsx             # Auth wrapper (Clerk + guest mode)
-│   │   ├── Board.tsx           # Main canvas — toolbar, presence, zoom
-│   │   ├── StickyNote.tsx      # Draggable sticky with text editing
-│   │   ├── Rectangle.tsx       # Draggable rectangle shape
-│   │   ├── useYjs.ts           # Yjs sync hook (WebSocket + CRDT)
-│   │   ├── types.ts            # BoardObject type definition
-│   │   ├── main.tsx            # React entry point
-│   │   └── index.css           # Global styles
-│   ├── .env.example            # Environment variable template
-│   └── package.json
+├── client/                          # Vite React app (Vercel)
+│   └── src/
+│       ├── App.tsx                  # Auth wrapper (Clerk + guest)
+│       ├── Board.tsx                # Main canvas — tools, selection, zoom
+│       ├── BoardShape.tsx           # Unified shape renderer (all 7 types)
+│       ├── Connector.tsx            # Line/arrow connectors
+│       ├── useYjs.ts                # Yjs sync hook (WebSocket + CRDT + awareness)
+│       ├── types.ts                 # Re-exports from shared/types.ts
+│       ├── constants.ts             # All magic numbers and defaults
+│       ├── components/
+│       │   ├── ChatPanel.tsx        # AI chat side panel
+│       │   ├── Toolbar.tsx          # Tool selection buttons
+│       │   ├── ColorPicker.tsx      # Color selection UI
+│       │   ├── PresenceBar.tsx      # Connection status + user avatars
+│       │   ├── ZoomControls.tsx     # Zoom in/out/reset
+│       │   └── CursorBadge.tsx      # Remote cursor labels
+│       ├── utils/
+│       │   ├── viewportCulling.ts   # Render budget + spatial culling
+│       │   ├── selection.ts         # Multi-select geometry
+│       │   └── throttle.ts          # Event throttling
+│       └── test/                    # 148 client tests
 │
-├── server/                     # WebSocket relay (deployed to Railway)
-│   ├── src/
-│   │   └── index.ts            # ~90 lines — rooms, broadcast, health check
-│   ├── .env.example
-│   └── package.json
+├── server/                          # WebSocket server (Railway)
+│   └── src/
+│       ├── index.ts                 # HTTP + WebSocket server (~500 lines)
+│       ├── aiHandler.ts             # Claude tool-calling agent
+│       ├── localParser.ts           # Regex fallback (12 AI commands)
+│       ├── security.ts              # CORS, message size, object limits
+│       ├── roomManager.ts           # Room lifecycle + idle eviction
+│       ├── db/supabase.ts           # Supabase client
+│       └── __tests__/               # 123 server tests
 │
-├── Dockerfile                  # Server container for Railway
-├── railway.json                # Railway deployment config
-├── vercel.json                 # Vercel deployment config
-└── .cursorrules                # AI code conventions
+├── shared/
+│   └── types.ts                     # BoardObject, ToolType, ObjectType
+│
+├── Dockerfile                       # Server container for Railway
+├── railway.json                     # Railway deployment config
+└── vercel.json                      # Vercel deployment config
 ```
 
-**Total source code: ~8 files, ~1,000 lines.**
+**~5,200 lines of source code + ~4,000 lines of tests across 271 test cases.**
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 20+
-- A [Clerk](https://clerk.com) account (free tier)
+- [Clerk](https://clerk.com) account (free tier) — or skip for guest-only mode
+- [Supabase](https://supabase.com) project (free tier) — for persistence
+- [Anthropic API key](https://console.anthropic.com) — optional, falls back to local parser
 
 ### 1. Clone and install
 
@@ -91,72 +119,79 @@ npm install --prefix server
 ```bash
 # Client
 cp client/.env.example client/.env.local
-# Edit client/.env.local — add your Clerk publishable key
+# Set: VITE_CLERK_PUBLISHABLE_KEY, VITE_API_URL
 
-# Server (optional — defaults work for local dev)
+# Server
 cp server/.env.example server/.env
+# Set: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, ALLOWED_ORIGINS
 ```
 
-### 3. Run locally
+### 3. Set up Supabase
 
-**Terminal 1 — WebSocket server:**
+Create a `board_snapshots` table:
+
+```sql
+CREATE TABLE board_snapshots (
+  board_id TEXT PRIMARY KEY,
+  snapshot TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 4. Run locally
+
 ```bash
+# Terminal 1 — WebSocket server
 cd server && npm run dev
-# [WS] y-websocket server running on :1234
-```
 
-**Terminal 2 — Frontend:**
-```bash
+# Terminal 2 — Frontend
 cd client && npm run dev
-# VITE ready at http://localhost:5174
 ```
 
-Open http://localhost:5174 in two browser tabs to test real-time sync.
+Open http://localhost:5173 in two browser tabs to test real-time sync.
 
-## Console-Driven Testing
+### 5. Run tests
 
-Every mutation logs to the browser console. Open DevTools (F12) and watch:
-
-```
-[YJS] Connected to wss://raqdrobinson.com/mvp-board-1
-[YJS STATUS] connected
-[YJS CREATE] f4a8... sticky {x: 100, y: 100}
-[YJS OBSERVE] Changes received: 1
-  f4a8...: add {id: 'f4a8...', type: 'sticky', ...}
-[YJS UPDATE] f4a8... BEFORE: {x:100} AFTER: {x:250}
-[AWARENESS] Remote users: 1
+```bash
+cd server && npm test    # 123 tests (Vitest)
+cd client && npm test    # 148 tests (Vitest + jsdom)
 ```
 
-**Test by opening two browser tabs** — create a sticky in one, watch it appear in the other.
+## AI Commands
+
+The AI chat agent supports natural language commands:
+
+| Command | Example |
+|---------|---------|
+| Create objects | "Add a yellow sticky note that says 'User Research'" |
+| Position objects | "Create a blue rectangle at position 100, 200" |
+| Update properties | "Change the sticky note color to green" |
+| Grid layouts | "Create a 2x3 grid of sticky notes for pros and cons" |
+| Arrange existing | "Arrange these sticky notes in a grid" |
+| Templates | "Set up a retrospective board with What Went Well, What Didn't, and Action Items columns" |
+
+The AI runs server-side using Claude Sonnet with 3 tools (`createObject`, `updateObject`, `moveObject`). It receives a live snapshot of all board objects as context. When no API key is configured, a local regex parser handles the same 12 command patterns.
+
+## Security
+
+- CORS restriction via `ALLOWED_ORIGINS` environment variable
+- WebSocket origin validation
+- Message size limit (1 MB per WebSocket message)
+- Object count limit (5,000 per board) with preemptive rejection
+- Room name validation (alphanumeric + hyphens/underscores)
+- AI message length limit (2,000 characters)
+- WebSocket compression (perMessageDeflate)
+- Idle room eviction (1 hour timeout, saves to Supabase before cleanup)
 
 ## Deployment
 
-### WebSocket Server (Railway)
+Both services auto-deploy when you push to `main`.
 
-The server deploys via the `Dockerfile` at the repo root:
+**Frontend (Vercel):** Import repo → set env vars → add custom domain.
 
-1. Connect GitHub repo in [Railway dashboard](https://railway.app)
-2. Set `PORT=1234` in environment variables
-3. Railway auto-deploys on push to main
+**Server (Railway):** Connect repo → set env vars → deploys via Dockerfile.
 
-### Frontend (Vercel)
-
-1. Import repo in [Vercel dashboard](https://vercel.com)
-2. Set environment variables:
-   - `VITE_CLERK_PUBLISHABLE_KEY` — your Clerk key
-   - `VITE_WS_URL` — `wss://your-railway-domain.com`
-3. Add custom domain in Settings → Domains
-
-**Cost: $0/month** (both services on free tier).
-
-## What's Next (Post-MVP)
-
-- [ ] Database persistence (Supabase)
-- [ ] Delete objects
-- [ ] Undo/redo
-- [ ] Color picker
-- [ ] AI chat agent
-- [ ] Mobile touch support
+**Cost: $5/month** (Railway $5 + Supabase free + Vercel free + Clerk free).
 
 ## License
 

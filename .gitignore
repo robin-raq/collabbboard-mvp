@@ -42,6 +42,10 @@ coverage/
 # Planning docs
 planning-docs/
 
+# Submission docs (kept local)
+collabboard-ai-dev-log.md
+collabboard-ai-cost-analysis.md
+
 # Misc
 *.tsbuildinfo
 .vercel
