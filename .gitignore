@@ -36,6 +36,10 @@ pnpm-debug.log*
 # Cursor
 .cursor/
 
+# Claude Code
+.claude/worktrees/
+.agents/
+
 # Testing
 coverage/
 
