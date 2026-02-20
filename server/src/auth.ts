@@ -36,12 +36,20 @@ export async function authenticateRequest(
   if (!token.trim()) return null
 
   try {
+    if (!CLERK_SECRET_KEY) {
+      console.error('[auth] CLERK_SECRET_KEY is empty — cannot verify tokens')
+      return null
+    }
     const payload = await verifyToken(token, {
       secretKey: CLERK_SECRET_KEY,
     })
-    if (!payload?.sub) return null
+    if (!payload?.sub) {
+      console.error('[auth] Token verified but no sub claim found')
+      return null
+    }
     return { userId: payload.sub }
-  } catch {
+  } catch (err) {
+    console.error('[auth] Token verification failed:', err instanceof Error ? err.message : err)
     return null
   }
 }
