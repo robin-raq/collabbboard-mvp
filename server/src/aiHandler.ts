@@ -314,7 +314,27 @@ export interface AICommandMetadata {
   sessionId?: string
 }
 
-const MODEL_NAME = 'claude-sonnet-4-20250514'
+const MODEL_FAST = 'claude-sonnet-4-20250514'
+const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
+
+/**
+ * Classify command complexity for token budget and turn limits.
+ * Complex = grids, layouts, templates, multi-step, or long/ambiguous prompts.
+ * Returns the model name (currently same model, but allows easy swap to Haiku
+ * when available on the API plan).
+ */
+const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?)\b/i
+
+export function selectModel(userMessage: string): string {
+  if (COMPLEX_PATTERNS.test(userMessage) || userMessage.length > 120) {
+    return MODEL_POWERFUL
+  }
+  return MODEL_FAST
+}
+
+export function isComplexCommand(userMessage: string): boolean {
+  return COMPLEX_PATTERNS.test(userMessage) || userMessage.length > 120
+}
 
 export async function processAICommand(
   userMessage: string,
@@ -371,6 +391,13 @@ export async function processAICommand(
   let totalInputTokens = 0
   let totalOutputTokens = 0
 
+  // Route model and set token/turn budgets based on command complexity
+  const modelName = selectModel(userMessage)
+  const complex = isComplexCommand(userMessage)
+  const maxTokens = complex ? 2048 : 1024
+
+  console.log(`[AI] Using ${complex ? 'complex' : 'simple'} budget for: "${userMessage.slice(0, 60)}"`)
+
   // Build initial messages
   const messages: Anthropic.MessageParam[] = [
     {
@@ -379,8 +406,8 @@ export async function processAICommand(
     },
   ]
 
-  // Multi-turn tool-use loop
-  let maxTurns = 10
+  // Multi-turn tool-use loop (cap at 3 for simple, 10 for complex)
+  let maxTurns = complex ? 10 : 3
   let turnNumber = 0
   while (maxTurns-- > 0) {
     turnNumber++
@@ -388,14 +415,14 @@ export async function processAICommand(
     // Trace this LLM generation
     const generation = trace.generation({
       name: `claude-call-${turnNumber}`,
-      model: MODEL_NAME,
+      model: modelName,
       input: messages,
-      modelParameters: { max_tokens: 4096 },
+      modelParameters: { max_tokens: maxTokens },
     })
 
     const response = await anthropic.messages.create({
-      model: MODEL_NAME,
-      max_tokens: 4096,
+      model: modelName,
+      max_tokens: maxTokens,
       system: SYSTEM_PROMPT,
       tools,
       messages,

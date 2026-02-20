@@ -312,3 +312,54 @@ describe('buildBoardContext', () => {
     expect(context).toContain('475')
   })
 })
+
+// ---------------------------------------------------------------------------
+// selectModel tests — model routing for speed optimization
+// ---------------------------------------------------------------------------
+
+import { selectModel, isComplexCommand } from '../aiHandler.js'
+
+describe('isComplexCommand', () => {
+  it('returns false for simple creation commands', () => {
+    expect(isComplexCommand('Add a yellow sticky note')).toBe(false)
+    expect(isComplexCommand('Create a blue rectangle at position 100, 200')).toBe(false)
+    expect(isComplexCommand('add a circle')).toBe(false)
+  })
+
+  it('returns false for simple manipulation commands', () => {
+    expect(isComplexCommand('Change the color to green')).toBe(false)
+    expect(isComplexCommand('Move it to 300, 400')).toBe(false)
+    expect(isComplexCommand('Delete the sticky note')).toBe(false)
+  })
+
+  it('returns true for grid/layout commands', () => {
+    expect(isComplexCommand('Create a 2x3 grid of sticky notes')).toBe(true)
+    expect(isComplexCommand('Arrange these sticky notes in a grid')).toBe(true)
+    expect(isComplexCommand('lay out the notes in rows')).toBe(true)
+  })
+
+  it('returns true for template/complex commands', () => {
+    expect(isComplexCommand('Set up a retrospective board')).toBe(true)
+    expect(isComplexCommand('Create a SWOT analysis template')).toBe(true)
+    expect(isComplexCommand('Build a user journey map')).toBe(true)
+  })
+
+  it('returns true for long commands (>120 chars)', () => {
+    expect(isComplexCommand('I need you to create a board with multiple sections for our team planning session with columns for each team member')).toBe(true)
+  })
+
+  it('is case-insensitive', () => {
+    expect(isComplexCommand('ADD A STICKY NOTE')).toBe(false)
+    expect(isComplexCommand('CREATE A GRID')).toBe(true)
+  })
+})
+
+describe('selectModel', () => {
+  it('returns a valid model name for simple commands', () => {
+    expect(selectModel('Add a sticky note')).toContain('claude-')
+  })
+
+  it('returns a valid model name for complex commands', () => {
+    expect(selectModel('Create a 2x3 grid of sticky notes')).toContain('claude-')
+  })
+})
