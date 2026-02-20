@@ -13,6 +13,36 @@ import CursorBadge from './components/CursorBadge'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
+
+// ---------------------------------------------------------------------------
+// Frame grouping: detect which frame (if any) fully contains an object
+// ---------------------------------------------------------------------------
+
+/** Returns the ID of the smallest enclosing frame, or undefined if none. */
+export function detectParentFrame(
+  id: string,
+  updatedObj: { x: number; y: number; width: number; height: number; type: string },
+  allObjects: BoardObject[],
+): string | undefined {
+  if (updatedObj.type === 'frame') return undefined // frames don't nest
+
+  let bestFrame: { id: string; area: number } | null = null
+  for (const frame of allObjects) {
+    if (frame.type !== 'frame' || frame.id === id) continue
+    const inside =
+      updatedObj.x >= frame.x &&
+      updatedObj.y >= frame.y &&
+      updatedObj.x + updatedObj.width <= frame.x + frame.width &&
+      updatedObj.y + updatedObj.height <= frame.y + frame.height
+    if (inside) {
+      const area = frame.width * frame.height
+      if (!bestFrame || area < bestFrame.area) {
+        bestFrame = { id: frame.id, area }
+      }
+    }
+  }
+  return bestFrame?.id
+}
 import {
   USER_COLORS,
   ZOOM_SCALE_FACTOR,
@@ -432,6 +462,15 @@ export default function Board({ userName, boardId }: BoardProps) {
               updateObject(child.id, { x: child.x + dx, y: child.y + dy })
             }
           }
+        }
+      }
+
+      // Auto-detect parent frame when a non-frame object is repositioned
+      if (obj && obj.type !== 'frame' && updates.x !== undefined && updates.y !== undefined) {
+        const merged = { ...obj, ...updates }
+        const newParent = detectParentFrame(id, merged, objects)
+        if (newParent !== obj.parentId) {
+          updates = { ...updates, parentId: newParent }
         }
       }
 
