@@ -317,7 +317,7 @@ describe('buildBoardContext', () => {
 // selectModel tests — model routing for speed optimization
 // ---------------------------------------------------------------------------
 
-import { selectModel, isComplexCommand } from '../aiHandler.js'
+import { selectModel, isComplexCommand, findOpenPosition } from '../aiHandler.js'
 
 describe('isComplexCommand', () => {
   it('returns false for simple creation commands', () => {
@@ -368,5 +368,97 @@ describe('selectModel', () => {
 
   it('returns a valid model name for complex commands', () => {
     expect(selectModel('Create a 2x3 grid of sticky notes')).toContain('claude-')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// findOpenPosition tests — collision-aware placement for AI objects
+// ---------------------------------------------------------------------------
+
+describe('findOpenPosition', () => {
+  it('returns original position when board is empty', () => {
+    const objects = createTestMap()
+    const pos = findOpenPosition(100, 100, 200, 150, objects)
+    expect(pos.x).toBe(100)
+    expect(pos.y).toBe(100)
+  })
+
+  it('returns original position when no overlap exists', () => {
+    const objects = createTestMap()
+    objects.set('existing', {
+      id: 'existing', type: 'sticky', x: 500, y: 500,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+    const pos = findOpenPosition(100, 100, 200, 150, objects)
+    expect(pos.x).toBe(100)
+    expect(pos.y).toBe(100)
+  })
+
+  it('shifts position when overlapping an existing object', () => {
+    const objects = createTestMap()
+    objects.set('blocker', {
+      id: 'blocker', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+    // Try to place at same position — should be nudged
+    const pos = findOpenPosition(100, 100, 200, 150, objects)
+    expect(pos.x).not.toBe(100)
+    // New position should not overlap the existing object
+    const noOverlap =
+      pos.x + 200 <= 100 || pos.x >= 300 ||
+      pos.y + 150 <= 100 || pos.y >= 250
+    expect(noOverlap).toBe(true)
+  })
+
+  it('shifts position when partially overlapping', () => {
+    const objects = createTestMap()
+    objects.set('blocker', {
+      id: 'blocker', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+    // Place at (200, 150) — overlaps with blocker at (100-300, 100-250)
+    const pos = findOpenPosition(200, 150, 200, 150, objects)
+    // Should be nudged away
+    const noOverlap =
+      pos.x + 200 <= 100 || pos.x >= 300 ||
+      pos.y + 150 <= 100 || pos.y >= 250
+    expect(noOverlap).toBe(true)
+  })
+
+  it('handles multiple existing objects', () => {
+    const objects = createTestMap()
+    objects.set('obj-1', {
+      id: 'obj-1', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+    objects.set('obj-2', {
+      id: 'obj-2', type: 'sticky', x: 320, y: 100,
+      width: 200, height: 150, fill: '#87CEEB',
+    })
+    // Place at (100, 100) — should dodge both objects
+    const pos = findOpenPosition(100, 100, 200, 150, objects)
+    // Verify no overlap with either
+    const overlapsObj1 =
+      pos.x < 300 && pos.x + 200 > 100 &&
+      pos.y < 250 && pos.y + 150 > 100
+    const overlapsObj2 =
+      pos.x < 520 && pos.x + 200 > 320 &&
+      pos.y < 250 && pos.y + 150 > 100
+    expect(overlapsObj1 || overlapsObj2).toBe(false)
+  })
+
+  it('respects padding between objects', () => {
+    const objects = createTestMap()
+    objects.set('blocker', {
+      id: 'blocker', type: 'sticky', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+    const padding = 20
+    const pos = findOpenPosition(100, 100, 200, 150, objects, padding)
+    // Should have at least `padding` pixels gap from blocker
+    const gapX = pos.x >= 300 ? pos.x - 300 : 100 - (pos.x + 200)
+    const gapY = pos.y >= 250 ? pos.y - 250 : 100 - (pos.y + 150)
+    const hasGap = gapX >= padding || gapY >= padding
+    expect(hasGap).toBe(true)
   })
 })

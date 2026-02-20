@@ -13,15 +13,16 @@ interface ZoomControlsProps {
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomReset: () => void
+  chatOpen?: boolean
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ZoomControls({ scale, onZoomIn, onZoomOut, onZoomReset }: ZoomControlsProps) {
+export default function ZoomControls({ scale, onZoomIn, onZoomOut, onZoomReset, chatOpen }: ZoomControlsProps) {
   return (
-    <div style={zoomControlsStyle}>
+    <div style={{ ...zoomControlsStyle, right: chatOpen ? 366 : 16 }}>
       <button onClick={onZoomOut} style={zoomBtnStyle} title="Zoom Out" aria-label="Zoom out">
         &minus;
       </button>

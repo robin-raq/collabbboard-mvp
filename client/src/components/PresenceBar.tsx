@@ -16,15 +16,16 @@ interface PresenceBarProps {
   userName: string
   userColor: string
   remoteCursors: RemoteCursor[]
+  chatOpen?: boolean
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export default function PresenceBar({ connected, userName, userColor, remoteCursors }: PresenceBarProps) {
+export default function PresenceBar({ connected, userName, userColor, remoteCursors, chatOpen }: PresenceBarProps) {
   return (
-    <div style={presenceStyle}>
+    <div style={{ ...presenceStyle, right: chatOpen ? 366 : 12 }}>
       {/* Connection indicator */}
       <span
         style={{

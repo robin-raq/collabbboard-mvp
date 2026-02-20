@@ -188,6 +188,22 @@ describe('PresenceBar', () => {
     )
     expect(screen.queryByText(/^\+/)).toBeNull()
   })
+
+  it('shifts right position when chatOpen is true', () => {
+    const { container } = render(
+      <PresenceBar connected={true} userName="Alice" userColor="#EF4444" remoteCursors={[]} chatOpen={true} />,
+    )
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper.style.right).toBe('366px')
+  })
+
+  it('uses default right position when chatOpen is false', () => {
+    const { container } = render(
+      <PresenceBar connected={true} userName="Alice" userColor="#EF4444" remoteCursors={[]} chatOpen={false} />,
+    )
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper.style.right).toBe('12px')
+  })
 })
 
 // ============================================================================
@@ -200,6 +216,7 @@ describe('ZoomControls', () => {
     onZoomIn: vi.fn(),
     onZoomOut: vi.fn(),
     onZoomReset: vi.fn(),
+    chatOpen: false,
   }
 
   it('displays the current zoom percentage', () => {
@@ -236,6 +253,19 @@ describe('ZoomControls', () => {
     render(<ZoomControls {...defaultProps} onZoomReset={onZoomReset} />)
     fireEvent.click(screen.getByText('100%'))
     expect(onZoomReset).toHaveBeenCalledOnce()
+  })
+
+  it('shifts right position when chatOpen is true', () => {
+    const { container } = render(<ZoomControls {...defaultProps} chatOpen={true} />)
+    const wrapper = container.firstChild as HTMLElement
+    // When chat is open, right should be shifted to 366px
+    expect(wrapper.style.right).toBe('366px')
+  })
+
+  it('uses default right position when chatOpen is false', () => {
+    const { container } = render(<ZoomControls {...defaultProps} chatOpen={false} />)
+    const wrapper = container.firstChild as HTMLElement
+    expect(wrapper.style.right).toBe('16px')
   })
 })
 

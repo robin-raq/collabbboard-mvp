@@ -1,4 +1,4 @@
-import { useCallback, memo } from 'react'
+import { useCallback, useRef, memo } from 'react'
 import { Group, Line, Arrow, Rect, Circle } from 'react-konva'
 import type Konva from 'konva'
 import type { BoardObject } from './types'
@@ -152,6 +152,54 @@ const Connector = memo(function Connector({
     })
   }, [obj.id, obj.x, obj.y, rawPts, onUpdate])
 
+  // ---- Body drag: move entire line by dragging its body --------------------
+  const bodyDragStartRef = useRef<{ nodeX: number; nodeY: number } | null>(null)
+
+  const handleBodyDragStart = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    const node = e.target
+    bodyDragStartRef.current = { nodeX: node.x(), nodeY: node.y() }
+  }, [])
+
+  const handleBodyDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
+    e.cancelBubble = true
+    const node = e.target
+    if (!bodyDragStartRef.current) return
+
+    const dx = node.x() - bodyDragStartRef.current.nodeX
+    const dy = node.y() - bodyDragStartRef.current.nodeY
+
+    // Reset node position (Konva accumulated drag offset)
+    node.position({ x: 0, y: 0 })
+    bodyDragStartRef.current = null
+
+    if (dx === 0 && dy === 0) return
+
+    // Compute new absolute endpoint positions
+    const absX1 = obj.x + rawPts[0] + dx
+    const absY1 = obj.y + rawPts[1] + dy
+    const absX2 = obj.x + rawPts[2] + dx
+    const absY2 = obj.y + rawPts[3] + dy
+
+    const newX = Math.min(absX1, absX2)
+    const newY = Math.min(absY1, absY2)
+
+    onUpdate(obj.id, {
+      x: newX,
+      y: newY,
+      width: Math.abs(absX2 - absX1) || 1,
+      height: Math.abs(absY2 - absY1) || 1,
+      points: [
+        absX1 - newX,
+        absY1 - newY,
+        absX2 - newX,
+        absY2 - newY,
+      ],
+      fromId: undefined, // Detach from connected objects
+      toId: undefined,
+    })
+  }, [obj.id, obj.x, obj.y, rawPts, onUpdate])
+
   const showArrow = obj.arrowEnd !== false // Default true
 
   const lineColor = obj.fill === 'transparent' ? '#374151' : obj.fill
@@ -179,12 +227,15 @@ const Connector = memo(function Connector({
         />
       )}
 
-      {/* Invisible wider hit area for easier selection */}
+      {/* Invisible wider hit area for easier selection + body drag */}
       <Line
         points={[x1, y1, x2, y2]}
         stroke="transparent"
         strokeWidth={16}
         hitStrokeWidth={16}
+        draggable={isSelected}
+        onDragStart={handleBodyDragStart}
+        onDragEnd={handleBodyDragEnd}
       />
 
       {/* Endpoint handles when selected */}

@@ -274,6 +274,31 @@ describe('Rubber-band selection', () => {
       const selected = sampleObjects.filter((obj) => intersects(obj, rect))
       expect(selected).toHaveLength(5)
     })
+
+    it('includes line objects in rubber-band selection', () => {
+      const objectsWithLine: BoardObject[] = [
+        makeObj('a', 100, 100, 100, 100),
+        { id: 'line-1', type: 'line', x: 200, y: 200, width: 100, height: 50, fill: '#374151' },
+      ]
+      const rect: SelectionRect = { x: 50, y: 50, w: 300, h: 300 }
+      // No type filter — both rect and line should be selected
+      const selected = objectsWithLine.filter((obj) => intersects(obj, rect))
+      expect(selected).toHaveLength(2)
+      expect(selected.map((o) => o.id)).toContain('line-1')
+    })
+
+    it('selects lines alongside other shapes in mixed selection', () => {
+      const mixedObjects: BoardObject[] = [
+        makeObj('sticky-1', 100, 100, 200, 150),
+        { id: 'line-1', type: 'line', x: 150, y: 150, width: 200, height: 10, fill: '#374151' },
+        makeObj('rect-1', 500, 500, 100, 100),
+      ]
+      const rect: SelectionRect = { x: 50, y: 50, w: 400, h: 400 }
+      const selected = mixedObjects.filter((obj) => intersects(obj, rect))
+      expect(selected).toHaveLength(2) // sticky-1 and line-1, not rect-1
+      expect(selected.map((o) => o.id)).toContain('sticky-1')
+      expect(selected.map((o) => o.id)).toContain('line-1')
+    })
   })
 })
 

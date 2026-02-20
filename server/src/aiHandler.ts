@@ -171,6 +171,76 @@ const defaultColors: Record<string, string> = {
   frame: '#E8E8E8',
 }
 
+/**
+ * Check if two rectangles overlap (with optional padding).
+ */
+function rectsOverlap(
+  ax: number, ay: number, aw: number, ah: number,
+  bx: number, by: number, bw: number, bh: number,
+  padding = 0,
+): boolean {
+  return (
+    ax < bx + bw + padding &&
+    ax + aw + padding > bx &&
+    ay < by + bh + padding &&
+    ay + ah + padding > by
+  )
+}
+
+/**
+ * Find a non-overlapping position for a new object.
+ * Scans right then down until a clear spot is found.
+ */
+export function findOpenPosition(
+  x: number, y: number, width: number, height: number,
+  objectsMap: Y.Map<BoardObject>,
+  padding = 20,
+): { x: number; y: number } {
+  const existing: Array<{ x: number; y: number; width: number; height: number }> = []
+  objectsMap.forEach((obj) => {
+    existing.push({ x: obj.x, y: obj.y, width: obj.width, height: obj.height })
+  })
+
+  // If no existing objects, return as-is
+  if (existing.length === 0) return { x, y }
+
+  // Check if the proposed position is clear
+  const hasOverlap = (px: number, py: number) =>
+    existing.some((e) => rectsOverlap(px, py, width, height, e.x, e.y, e.width, e.height, padding))
+
+  // If no overlap, return original position
+  if (!hasOverlap(x, y)) return { x, y }
+
+  // Try shifting right, then wrapping to next row
+  const stepX = width + padding
+  const stepY = height + padding
+  const maxX = 1100
+  const maxY = 700
+
+  let tryX = x
+  let tryY = y
+
+  for (let row = 0; row < 20; row++) {
+    tryX = x + (row === 0 ? stepX : 0)
+    if (row > 0) tryY = y + row * stepY
+
+    for (let col = 0; col < 20; col++) {
+      if (!hasOverlap(tryX, tryY)) {
+        return { x: Math.min(tryX, maxX), y: Math.min(tryY, maxY) }
+      }
+      tryX += stepX
+      if (tryX + width > maxX + 200) {
+        break // wrap to next row
+      }
+    }
+    tryX = 50 // reset to left edge for next row
+  }
+
+  // Fallback: place below all existing objects
+  const maxBottom = Math.max(...existing.map((e) => e.y + e.height))
+  return { x, y: maxBottom + padding }
+}
+
 export function executeCreateObject(
   input: Record<string, unknown>,
   objectsMap: Y.Map<BoardObject>
@@ -179,13 +249,21 @@ export function executeCreateObject(
   const defaults = defaultSizes[type] || { width: 150, height: 100 }
   const id = generateId()
 
+  const requestedX = (input.x as number) || 100
+  const requestedY = (input.y as number) || 100
+  const width = (input.width as number) || defaults.width
+  const height = (input.height as number) || defaults.height
+
+  // Find non-overlapping position
+  const pos = findOpenPosition(requestedX, requestedY, width, height, objectsMap)
+
   const obj: BoardObject = {
     id,
     type,
-    x: (input.x as number) || 100,
-    y: (input.y as number) || 100,
-    width: (input.width as number) || defaults.width,
-    height: (input.height as number) || defaults.height,
+    x: pos.x,
+    y: pos.y,
+    width,
+    height,
     fill: (input.fill as string) || defaultColors[type] || '#FFD700',
     rotation: 0,
   }
@@ -289,7 +367,8 @@ const SYSTEM_PROMPT = `You are an AI assistant that helps users work with a coll
 IMPORTANT RULES:
 1. Use the provided tools to make changes to the board. Always use tools — never just describe what you would do.
 2. For creating objects, keep positions within the visible area (x: 50-1100, y: 50-700).
-3. When creating grids or layouts, space objects evenly with ~20-30px gaps.
+3. AVOID OVERLAPPING: Before placing new objects, check the board context for existing object positions. Choose coordinates that do not overlap with existing objects. Leave at least 20px gap between objects. The server will auto-nudge overlapping objects, but you should try to pick clear spots first.
+4. When creating grids or layouts, space objects evenly with ~20-30px gaps.
 4. For "sticky note" requests, use type "sticky" with default size 200x150.
 5. For retrospective or template boards, create frames as containers first, then add sticky notes inside them.
 6. Common sticky note colors: #FFD700 (yellow), #98FB98 (green), #87CEEB (blue), #FFB6C1 (pink), #DDA0DD (purple), #FFA07A (orange).

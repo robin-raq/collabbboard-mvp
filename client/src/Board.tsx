@@ -182,7 +182,7 @@ export default function Board({ userName }: BoardProps) {
       if (selectionStartRef.current && selectionRect) {
         // Only do rubber-band select if the rect is big enough (not just a click)
         if (selectionRect.w > 5 || selectionRect.h > 5) {
-          const selected = objects.filter((obj) => obj.type !== 'line' && intersects(obj, selectionRect))
+          const selected = objects.filter((obj) => intersects(obj, selectionRect))
           setSelectedIds(new Set(selected.map((o) => o.id)))
         }
         setSelectionRect(null)
@@ -364,7 +364,7 @@ export default function Board({ userName }: BoardProps) {
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault()
             // Select all non-line objects
-            const allIds = objects.filter((o) => o.type !== 'line').map((o) => o.id)
+            const allIds = objects.map((o) => o.id)
             setSelectedIds(new Set(allIds))
           } else {
             setActiveTool('arrow')
@@ -475,6 +475,7 @@ export default function Board({ userName }: BoardProps) {
         userName={userName}
         userColor={userColor}
         remoteCursors={remoteCursors}
+        chatOpen={showChat}
       />
 
       {/* Multi-select count badge */}
@@ -519,7 +520,7 @@ export default function Board({ userName }: BoardProps) {
       )}
 
       {/* Zoom controls (bottom right) */}
-      <ZoomControls scale={scale} onZoomIn={zoomIn} onZoomOut={zoomOut} onZoomReset={zoomReset} />
+      <ZoomControls scale={scale} onZoomIn={zoomIn} onZoomOut={zoomOut} onZoomReset={zoomReset} chatOpen={showChat} />
 
       {/* Canvas */}
       <Stage
