@@ -365,12 +365,15 @@ describe('isComplexCommand', () => {
 })
 
 describe('selectModel', () => {
-  it('returns a valid model name for simple commands', () => {
-    expect(selectModel('Add a sticky note')).toContain('claude-')
+  it('returns Haiku for simple commands (cost optimization)', () => {
+    expect(selectModel('Add a sticky note')).toBe('claude-3-5-haiku-20241022')
+    expect(selectModel('Create a blue rectangle')).toBe('claude-3-5-haiku-20241022')
+    expect(selectModel('Change the color to green')).toBe('claude-3-5-haiku-20241022')
   })
 
-  it('returns a valid model name for complex commands', () => {
-    expect(selectModel('Create a 2x3 grid of sticky notes')).toContain('claude-')
+  it('returns Sonnet for complex commands', () => {
+    expect(selectModel('Create a 2x3 grid of sticky notes')).toBe('claude-sonnet-4-20250514')
+    expect(selectModel('Create a SWOT analysis template')).toBe('claude-sonnet-4-20250514')
   })
 })
 

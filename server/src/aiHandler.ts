@@ -473,7 +473,7 @@ export interface AICommandMetadata {
   sessionId?: string
 }
 
-const MODEL_FAST = 'claude-sonnet-4-20250514'
+const MODEL_FAST = 'claude-3-5-haiku-20241022'
 const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
 
 /**
@@ -553,7 +553,7 @@ export async function processAICommand(
   // Route model and set token/turn budgets based on command complexity
   const modelName = selectModel(userMessage)
   const complex = isComplexCommand(userMessage)
-  const maxTokens = complex ? 2048 : 1024
+  const maxTokens = complex ? 2048 : 512
 
   console.log(`[AI] Using ${complex ? 'complex' : 'simple'} budget for: "${userMessage.slice(0, 60)}"`)
 
@@ -565,8 +565,8 @@ export async function processAICommand(
     },
   ]
 
-  // Multi-turn tool-use loop (cap at 3 for simple, 15 for complex to allow getBoardState checks)
-  let maxTurns = complex ? 15 : 3
+  // Multi-turn tool-use loop (cap at 3 for simple, 8 for complex to allow getBoardState checks)
+  let maxTurns = complex ? 8 : 3
   let turnNumber = 0
   while (maxTurns-- > 0) {
     turnNumber++
