@@ -17,6 +17,9 @@ A real-time collaborative whiteboard with AI assistance. Multiple users share an
 - **Presence awareness** — live connection status and user avatars
 - **Authentication** — Clerk sign-in (Google OAuth) or guest access
 - **State persistence** — Supabase snapshots every 30 seconds, survives server restarts
+- **AI dual-model routing** — simple commands use Haiku (~10x cheaper), complex commands use Sonnet
+- **Langfuse observability** — every AI call traced with model, tokens, turns, and tool execution spans
+- **Frame grouping** — objects placed inside frames auto-detect parentId and move with the frame
 - **Keyboard shortcuts** — V/S/R/C/T/F/L/A tools, Delete, Ctrl+A/D, Escape
 - **Performance optimized** — render budget caps at 150 objects, React.memo with primitive props
 
@@ -43,7 +46,8 @@ A real-time collaborative whiteboard with AI assistance. Multiple users share an
 | Frontend   | React 19 + Vite + TypeScript | Fast dev, type safety, HMR             |
 | Canvas     | Konva.js + react-konva       | Pan/zoom/drag/rotate built-in          |
 | Real-time  | Yjs + custom WebSocket       | CRDT = no merge conflicts              |
-| AI         | Anthropic Claude (Sonnet)    | Tool-calling agent with 3 tools        |
+| AI         | Anthropic Claude (Haiku + Sonnet) | Dual-model tool-calling agent with 4 tools |
+| Observability | Langfuse                  | AI call tracing (model, tokens, turns, tool spans) |
 | Auth       | Clerk                        | Google OAuth + guest mode              |
 | Backend    | Node.js + ws                 | WebSocket relay + AI endpoint          |
 | Database   | Supabase PostgreSQL          | Board state persistence                |
@@ -73,17 +77,18 @@ collabboard-mvp/
 │       │   ├── viewportCulling.ts   # Render budget + spatial culling
 │       │   ├── selection.ts         # Multi-select geometry
 │       │   └── throttle.ts          # Event throttling
-│       └── test/                    # 148 client tests
+│       └── test/                    # 185 client tests
 │
 ├── server/                          # WebSocket server (Railway)
 │   └── src/
 │       ├── index.ts                 # HTTP + WebSocket server (~500 lines)
 │       ├── aiHandler.ts             # Claude tool-calling agent
 │       ├── localParser.ts           # Regex fallback (12 AI commands)
+│       ├── langfuse.ts              # Langfuse tracing (no-op when disabled)
 │       ├── security.ts              # CORS, message size, object limits
 │       ├── roomManager.ts           # Room lifecycle + idle eviction
 │       ├── db/supabase.ts           # Supabase client
-│       └── __tests__/               # 123 server tests
+│       └── __tests__/               # 182 server tests
 │
 ├── shared/
 │   └── types.ts                     # BoardObject, ToolType, ObjectType
@@ -93,7 +98,7 @@ collabboard-mvp/
 └── vercel.json                      # Vercel deployment config
 ```
 
-**~5,200 lines of source code + ~4,000 lines of tests across 271 test cases.**
+**~5,200 lines of source code + ~4,000 lines of tests across 367 test cases.**
 
 ## Quick Start
 
@@ -123,7 +128,8 @@ cp client/.env.example client/.env.local
 
 # Server
 cp server/.env.example server/.env
-# Set: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, ALLOWED_ORIGINS
+# Set: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY, CLERK_SECRET_KEY, ALLOWED_ORIGINS
+# Optional: LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST
 ```
 
 ### 3. Set up Supabase
@@ -153,8 +159,8 @@ Open http://localhost:5173 in two browser tabs to test real-time sync.
 ### 5. Run tests
 
 ```bash
-cd server && npm test    # 123 tests (Vitest)
-cd client && npm test    # 148 tests (Vitest + jsdom)
+cd server && npm test    # 182 tests (Vitest)
+cd client && npm test    # 185 tests (Vitest + jsdom)
 ```
 
 ## AI Commands
@@ -170,7 +176,7 @@ The AI chat agent supports natural language commands:
 | Arrange existing | "Arrange these sticky notes in a grid" |
 | Templates | "Set up a retrospective board with What Went Well, What Didn't, and Action Items columns" |
 
-The AI runs server-side using Claude Sonnet with 3 tools (`createObject`, `updateObject`, `moveObject`). It receives a live snapshot of all board objects as context. When no API key is configured, a local regex parser handles the same 12 command patterns.
+The AI runs server-side with 4 tools (`createObject`, `updateObject`, `moveObject`, `getBoardState`). Simple commands are routed to Claude Haiku for cost efficiency (~10x cheaper); complex commands (grids, SWOT, templates) use Claude Sonnet for stronger reasoning. A complexity classifier selects the model automatically based on keyword patterns and message length. When no API key is configured, a local regex parser handles the same 12 command patterns.
 
 ## Security
 
