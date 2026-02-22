@@ -6,11 +6,13 @@ A real-time collaborative whiteboard with AI assistance. Multiple users share an
 
 ## Features
 
-- **Infinite canvas** — pan and zoom (0.1x–5x) with viewport culling for performance
+- **Infinite canvas** — scroll/trackpad pan, Ctrl+scroll zoom (0.1x–5x), Space+drag pan, with viewport culling for performance
 - **7 shape types** — sticky notes, rectangles, circles, text, frames, lines, arrows
 - **Real-time sync** — every mutation syncs instantly to all connected clients via Yjs CRDTs
 - **AI chat agent** — natural language commands to create, update, and arrange objects
-- **Multi-select** — shift-click, rubber-band selection, Cmd+A, group drag
+- **Multi-select** — shift-click, rubber-band drag-to-select, Cmd+A, group drag
+- **Undo / Redo** — Yjs UndoManager scoped to local changes only (Ctrl+Z / Ctrl+Shift+Z)
+- **Copy / Paste** — Ctrl+C/V with +20px stacking offset to prevent overlap
 - **Rotation** — center-pivot rotation with handle UI on all shapes
 - **Inline text editing** — double-click sticky notes to edit in place
 - **Multiplayer cursors** — color-coded remote cursors with name labels
@@ -20,7 +22,7 @@ A real-time collaborative whiteboard with AI assistance. Multiple users share an
 - **AI dual-model routing** — simple commands use Haiku (~10x cheaper), complex commands use Sonnet
 - **Langfuse observability** — every AI call traced with model, tokens, turns, and tool execution spans
 - **Frame grouping** — objects placed inside frames auto-detect parentId and move with the frame
-- **Keyboard shortcuts** — V/S/R/C/T/F/L/A tools, Delete, Ctrl+A/D, Escape
+- **Keyboard shortcuts** — V/S/R/C/T/F/L/A tools, Delete, Ctrl+Z/Shift+Z, Ctrl+C/V, Ctrl+A/D, Escape
 - **Performance optimized** — render budget caps at 150 objects, React.memo with primitive props
 
 ## Architecture
@@ -72,12 +74,13 @@ collabboard-mvp/
 │       │   ├── ColorPicker.tsx      # Color selection UI
 │       │   ├── PresenceBar.tsx      # Connection status + user avatars
 │       │   ├── ZoomControls.tsx     # Zoom in/out/reset
+│       │   ├── HelpPanel.tsx       # Keyboard shortcuts overlay
 │       │   └── CursorBadge.tsx      # Remote cursor labels
 │       ├── utils/
 │       │   ├── viewportCulling.ts   # Render budget + spatial culling
 │       │   ├── selection.ts         # Multi-select geometry
 │       │   └── throttle.ts          # Event throttling
-│       └── test/                    # 185 client tests
+│       └── test/                    # 225 client tests
 │
 ├── server/                          # WebSocket server (Railway)
 │   └── src/
@@ -88,7 +91,7 @@ collabboard-mvp/
 │       ├── security.ts              # CORS, message size, object limits
 │       ├── roomManager.ts           # Room lifecycle + idle eviction
 │       ├── db/supabase.ts           # Supabase client
-│       └── __tests__/               # 182 server tests
+│       └── __tests__/               # 190 server tests
 │
 ├── shared/
 │   └── types.ts                     # BoardObject, ToolType, ObjectType
@@ -98,7 +101,7 @@ collabboard-mvp/
 └── vercel.json                      # Vercel deployment config
 ```
 
-**~5,200 lines of source code + ~4,000 lines of tests across 367 test cases.**
+**~7,100 lines of source code + ~6,800 lines of tests across 415 test cases.**
 
 ## Quick Start
 
@@ -159,8 +162,8 @@ Open http://localhost:5173 in two browser tabs to test real-time sync.
 ### 5. Run tests
 
 ```bash
-cd server && npm test    # 182 tests (Vitest)
-cd client && npm test    # 185 tests (Vitest + jsdom)
+cd server && npm test    # 190 tests (Vitest)
+cd client && npm test    # 225 tests (Vitest + jsdom)
 ```
 
 ## AI Commands
