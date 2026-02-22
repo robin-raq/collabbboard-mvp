@@ -202,6 +202,16 @@ Both services auto-deploy when you push to `main`.
 
 **Cost: $5/month** (Railway $5 + Supabase free + Vercel free + Clerk free).
 
+## Future Work
+
+- **Horizontal scaling** — Redis pub/sub between server instances for multi-process WebSocket routing. Server-side cursor batching (100ms aggregation) to reduce message storms from ~1,200 msg/sec to ~200 msg/sec per room at 20 users.
+- **AI selective context** — Send only viewport-relevant objects to Claude instead of the full board snapshot. A board with 500 objects burns tokens unnecessarily when the user says "make these sticky notes blue" and only 6 are in view.
+- **Offline-first** — Yjs already supports offline editing via its CRDT model. Add IndexedDB persistence on the client so edits queue locally and sync automatically when the connection restores.
+- **Version history** — Yjs stores document history internally. Expose periodic snapshots to let users rewind a board to any previous state — the infrastructure is already there.
+- **Export** — PNG, SVG, and PDF export of boards for sharing outside the app.
+- **Prompt caching** — Anthropic's prompt caching for the system prompt (board context + tool definitions), which is largely static between commands in the same session. Estimated ~30% additional cost reduction on top of model routing.
+- **Mobile / touch support** — Touch gestures for pan, zoom, drag, and rotate on tablets. Konva supports touch events natively.
+
 ## License
 
 MIT
