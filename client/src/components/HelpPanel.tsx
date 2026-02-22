@@ -27,6 +27,7 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: 'Ctrl+A', description: 'Select all objects' },
   { keys: 'Delete', description: 'Delete selected' },
   { keys: 'Escape', description: 'Deselect / cancel' },
+  { keys: 'Space+Drag', description: 'Pan canvas' },
 ]
 
 const FEATURES: string[] = [
@@ -37,7 +38,7 @@ const FEATURES: string[] = [
   'Frames group child objects',
   'Connector lines & arrows between objects',
   'Drag to rubber-band select multiple objects',
-  'Scroll wheel to zoom, drag canvas to pan',
+  'Scroll/trackpad to pan, Ctrl+scroll to zoom',
 ]
 
 export default function HelpPanel({ onClose }: HelpPanelProps) {

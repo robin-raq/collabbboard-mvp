@@ -82,6 +82,10 @@ export default function Board({ userName, boardId }: BoardProps) {
   // Rubber-band selection
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+  // Space-to-pan
+  const [spaceHeld, setSpaceHeld] = useState(false)
+  // Track whether a rubber-band drag just completed, so onClick skips
+  const didRubberBandRef = useRef(false)
   // Clipboard for copy/paste
   const clipboardRef = useRef<ClipboardState | null>(null)
   // AI Chat panel
@@ -127,49 +131,67 @@ export default function Board({ userName, boardId }: BoardProps) {
     [objects, selectedId],
   )
 
-  // ---- Zoom ---------------------------------------------------------------
+  // ---- Zoom & scroll pan ---------------------------------------------------
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
       e.evt.preventDefault()
       const stage = stageRef.current
       if (!stage) return
 
-      const pointer = stage.getPointerPosition()
-      if (!pointer) return
+      // Ctrl+wheel (or pinch) = zoom; plain wheel = pan
+      if (e.evt.ctrlKey || e.evt.metaKey) {
+        // Zoom (pinch-to-zoom on trackpads sends ctrlKey)
+        const pointer = stage.getPointerPosition()
+        if (!pointer) return
 
-      const oldScale = scale
-      const newScale = e.evt.deltaY > 0
-        ? Math.max(ZOOM_MIN, oldScale / ZOOM_SCALE_FACTOR)
-        : Math.min(ZOOM_MAX, oldScale * ZOOM_SCALE_FACTOR)
+        const oldScale = scale
+        const newScale = e.evt.deltaY > 0
+          ? Math.max(ZOOM_MIN, oldScale / ZOOM_SCALE_FACTOR)
+          : Math.min(ZOOM_MAX, oldScale * ZOOM_SCALE_FACTOR)
 
-      const mousePointTo = {
-        x: (pointer.x - stagePos.x) / oldScale,
-        y: (pointer.y - stagePos.y) / oldScale,
+        const mousePointTo = {
+          x: (pointer.x - stagePos.x) / oldScale,
+          y: (pointer.y - stagePos.y) / oldScale,
+        }
+
+        setScale(newScale)
+        setStagePos({
+          x: pointer.x - mousePointTo.x * newScale,
+          y: pointer.y - mousePointTo.y * newScale,
+        })
+      } else {
+        // Plain scroll = pan (two-finger trackpad drag or mouse wheel)
+        setStagePos((prev) => ({
+          x: prev.x - e.evt.deltaX,
+          y: prev.y - e.evt.deltaY,
+        }))
       }
-
-      setScale(newScale)
-      setStagePos({
-        x: pointer.x - mousePointTo.x * newScale,
-        y: pointer.y - mousePointTo.y * newScale,
-      })
     },
     [scale, stagePos],
   )
 
-  // ---- Pan ----------------------------------------------------------------
-  const handleStageDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
-    if (e.target === e.target.getStage()) {
-      setStagePos({ x: e.target.x(), y: e.target.y() })
-    }
-  }, [])
+  // ---- Pan (middle-mouse / right-click drag) ------------------------------
+  const panStartRef = useRef<{ x: number; y: number; stageX: number; stageY: number } | null>(null)
 
-  // ---- Cursor awareness ---------------------------------------------------
   const handleMouseMove = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
       const stage = stageRef.current
       if (!stage) return
       const pointer = stage.getPointerPosition()
       if (!pointer) return
+
+      // Middle-mouse pan
+      if (panStartRef.current) {
+        const rawPointer = stage.getPointerPosition()
+        if (rawPointer) {
+          setStagePos({
+            x: panStartRef.current.stageX + (rawPointer.x - panStartRef.current.x),
+            y: panStartRef.current.stageY + (rawPointer.y - panStartRef.current.y),
+          })
+        }
+        return // don't update cursor or rubber-band while panning
+      }
+
       const x = (pointer.x - stagePos.x) / scale
       const y = (pointer.y - stagePos.y) / scale
       setCursor(x, y)
@@ -202,6 +224,25 @@ export default function Board({ userName, boardId }: BoardProps) {
   const handleStageMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (e.target !== e.target.getStage()) return
+
+      // Space + left-click drag = pan
+      if (spaceHeld) {
+        const stage = stageRef.current
+        if (stage) {
+          const pointer = stage.getPointerPosition()
+          if (pointer) {
+            panStartRef.current = {
+              x: pointer.x,
+              y: pointer.y,
+              stageX: stagePos.x,
+              stageY: stagePos.y,
+            }
+          }
+        }
+        return
+      }
+
+      // Left-click in select mode = rubber-band selection
       if (activeTool !== 'select') return
       if (lineStart) return
 
@@ -210,17 +251,24 @@ export default function Board({ userName, boardId }: BoardProps) {
 
       selectionStartRef.current = { x: world.x, y: world.y }
     },
-    [activeTool, lineStart, pointerToWorld],
+    [activeTool, lineStart, pointerToWorld, stagePos, spaceHeld],
   )
 
   // ---- Rubber-band selection: mouse up on stage ----------------------------
   const handleStageMouseUp = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (selectionStartRef.current && selectionRect) {
-        // Only do rubber-band select if the rect is big enough (not just a click)
-        if (selectionRect.w > 5 || selectionRect.h > 5) {
+      // End space-to-pan
+      if (panStartRef.current) {
+        panStartRef.current = null
+        didRubberBandRef.current = true // suppress the click that follows
+        return
+      }
+
+      if (selectionStartRef.current) {
+        if (selectionRect && (selectionRect.w > 5 || selectionRect.h > 5)) {
           const selected = objects.filter((obj) => intersects(obj, selectionRect))
           setSelectedIds(new Set(selected.map((o) => o.id)))
+          didRubberBandRef.current = true // suppress the click that follows
         }
         setSelectionRect(null)
         selectionStartRef.current = null
@@ -234,6 +282,13 @@ export default function Board({ userName, boardId }: BoardProps) {
     (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       // Only handle clicks on the stage itself (empty space)
       if (e.target !== e.target.getStage()) return
+
+      // Skip if a rubber-band drag or pan just finished — the click is
+      // an artefact of the mousedown→mousemove→mouseup sequence.
+      if (didRubberBandRef.current) {
+        didRubberBandRef.current = false
+        return
+      }
 
       const world = pointerToWorld()
       if (!world) return
@@ -472,7 +527,25 @@ export default function Board({ userName, boardId }: BoardProps) {
       }
     }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+
+    // Space-to-pan: track space bar hold
+    const spaceDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault()
+        setSpaceHeld(true)
+      }
+    }
+    const spaceUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setSpaceHeld(false)
+    }
+    window.addEventListener('keydown', spaceDown)
+    window.addEventListener('keyup', spaceUp)
+
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('keydown', spaceDown)
+      window.removeEventListener('keyup', spaceUp)
+    }
   }, [selectedIds, deleteObject, objects, createObject, undo, redo])
 
   // ---- Zoom controls ------------------------------------------------------
@@ -657,19 +730,18 @@ export default function Board({ userName, boardId }: BoardProps) {
         ref={stageRef}
         width={size.w}
         height={size.h}
-        draggable={activeTool === 'select' && !lineStart}
         scaleX={scale}
         scaleY={scale}
         x={stagePos.x}
         y={stagePos.y}
         onWheel={handleWheel}
-        onDragEnd={handleStageDragEnd}
         onMouseMove={handleMouseMove}
         onMouseDown={handleStageMouseDown}
         onMouseUp={handleStageMouseUp}
+        onContextMenu={(e) => e.evt.preventDefault()}
         onClick={handleStageClick}
         onTap={handleStageClick}
-        style={{ position: 'relative', zIndex: 1, cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
+        style={{ position: 'relative', zIndex: 1, cursor: spaceHeld ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
       >
         {/* Objects layer */}
         <Layer>
