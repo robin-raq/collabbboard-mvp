@@ -91,6 +91,9 @@ export function useYjs(roomId: string, userName: string, userColor: string, auth
 
   const yDocRef = useRef<Y.Doc | null>(null)
   const yMapRef = useRef<Y.Map<BoardObject> | null>(null)
+  const undoManagerRef = useRef<Y.UndoManager | null>(null)
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(crypto.randomUUID())
   const remoteCursorsRef = useRef<Map<string, RemoteCursor>>(new Map())
@@ -127,6 +130,23 @@ export function useYjs(roomId: string, userName: string, userColor: string, auth
     const yMap = yDoc.getMap<BoardObject>('objects')
     yDocRef.current = yDoc
     yMapRef.current = yMap
+
+    // Undo/Redo — track only local changes (origin=null). Remote updates
+    // use origin='remote' and are excluded. captureTimeout groups rapid
+    // mutations (e.g. dragging) into a single undo step.
+    const undoManager = new Y.UndoManager(yMap, {
+      captureTimeout: 500,
+      trackedOrigins: new Set([null]),
+    })
+    undoManagerRef.current = undoManager
+
+    const updateUndoState = () => {
+      setCanUndo(undoManager.canUndo())
+      setCanRedo(undoManager.canRedo())
+    }
+    undoManager.on('stack-item-added', updateUndoState)
+    undoManager.on('stack-item-popped', updateUndoState)
+    undoManager.on('stack-cleared', updateUndoState)
 
     const tokenParam = authToken ? `?token=${encodeURIComponent(authToken)}` : ''
     const wsUrl = `${WS_URL}/${roomId}${tokenParam}`
@@ -288,6 +308,11 @@ export function useYjs(roomId: string, userName: string, userColor: string, auth
       if (cursorRafRef.current) cancelAnimationFrame(cursorRafRef.current)
       yMap.unobserve(observer)
       yDoc.off('update', updateHandler)
+      undoManager.off('stack-item-added', updateUndoState)
+      undoManager.off('stack-item-popped', updateUndoState)
+      undoManager.off('stack-cleared', updateUndoState)
+      undoManager.destroy()
+      undoManagerRef.current = null
       ws?.close()
       yDoc.destroy()
       yDocRef.current = null
@@ -318,6 +343,18 @@ export function useYjs(roomId: string, userName: string, userColor: string, auth
     yMapRef.current.delete(id)
   }, [])
 
+  // ---- Undo / Redo ----------------------------------------------------------
+
+  const undo = useCallback(() => {
+    if (!undoManagerRef.current) return
+    undoManagerRef.current.undo()
+  }, [])
+
+  const redo = useCallback(() => {
+    if (!undoManagerRef.current) return
+    undoManagerRef.current.redo()
+  }, [])
+
   // ---- Cursor awareness (throttled to 50ms) --------------------------------
 
   const throttledSend = useMemo(
@@ -341,7 +378,7 @@ export function useYjs(roomId: string, userName: string, userColor: string, auth
     [throttledSend],
   )
 
-  return { objects, objectMap, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor }
+  return { objects, objectMap, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor, undo, redo, canUndo, canRedo }
 }
 
 // ---------------------------------------------------------------------------

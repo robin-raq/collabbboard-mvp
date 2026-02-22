@@ -33,6 +33,11 @@ interface ToolbarProps {
   onDelete: () => void
   onColorToggle: () => void
   selectedFill: string | null
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
+  onHelpToggle?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +51,11 @@ export default function Toolbar({
   onDelete,
   onColorToggle,
   selectedFill,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
+  onHelpToggle,
 }: ToolbarProps) {
   return (
     <div style={toolbarStyle}>
@@ -109,6 +119,56 @@ export default function Toolbar({
           }}
         />
         <span style={{ fontSize: 9, marginTop: 2 }}>Color</span>
+      </button>
+
+      {/* Divider */}
+      <div style={{ width: '70%', height: 1, background: '#e5e7eb', margin: '4px auto' }} />
+
+      {/* Undo button */}
+      <button
+        onClick={onUndo}
+        style={{
+          ...toolBtnStyle,
+          color: canUndo ? '#374151' : '#d1d5db',
+        }}
+        title="Undo (Ctrl+Z)"
+        aria-label="Undo"
+        disabled={!canUndo}
+      >
+        <span style={{ fontSize: 16 }}>&#8630;</span>
+        <span style={{ fontSize: 9, marginTop: 2 }}>Undo</span>
+      </button>
+
+      {/* Redo button */}
+      <button
+        onClick={onRedo}
+        style={{
+          ...toolBtnStyle,
+          color: canRedo ? '#374151' : '#d1d5db',
+        }}
+        title="Redo (Ctrl+Shift+Z)"
+        aria-label="Redo"
+        disabled={!canRedo}
+      >
+        <span style={{ fontSize: 16 }}>&#8631;</span>
+        <span style={{ fontSize: 9, marginTop: 2 }}>Redo</span>
+      </button>
+
+      {/* Divider */}
+      <div style={{ width: '70%', height: 1, background: '#e5e7eb', margin: '4px auto' }} />
+
+      {/* Help button */}
+      <button
+        onClick={onHelpToggle}
+        style={{
+          ...toolBtnStyle,
+          color: '#64748B',
+        }}
+        title="Keyboard Shortcuts (?)"
+        aria-label="Show keyboard shortcuts"
+      >
+        <span style={{ fontSize: 16 }}>?</span>
+        <span style={{ fontSize: 9, marginTop: 2 }}>Help</span>
       </button>
     </div>
   )

@@ -576,7 +576,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
 process.on('SIGTERM', () => { gracefulShutdown('SIGTERM') })
 process.on('SIGINT', () => { gracefulShutdown('SIGINT') })
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[WS] y-websocket server running on :${PORT}`)
   console.log(`[WS] Persistence: ${supabase ? 'Supabase' : 'DISABLED (no env vars)'}`)
   console.log(`[WS] Langfuse: ${isLangfuseEnabled() ? 'ENABLED' : 'DISABLED (no env vars)'}`)

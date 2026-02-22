@@ -10,6 +10,7 @@ import ColorPicker from './components/ColorPicker'
 import PresenceBar from './components/PresenceBar'
 import ZoomControls from './components/ZoomControls'
 import CursorBadge from './components/CursorBadge'
+import HelpPanel from './components/HelpPanel'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
@@ -66,7 +67,7 @@ interface BoardProps {
 export default function Board({ userName, boardId }: BoardProps) {
   const userColor = USER_COLORS[Math.abs(userName.charCodeAt(0)) % USER_COLORS.length]
 
-  const { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor } =
+  const { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor, undo, redo, canUndo, canRedo } =
     useYjs(boardId || 'mvp-board-1', userName, userColor)
 
   const stageRef = useRef<Konva.Stage>(null)
@@ -85,6 +86,8 @@ export default function Board({ userName, boardId }: BoardProps) {
   const clipboardRef = useRef<ClipboardState | null>(null)
   // AI Chat panel
   const [showChat, setShowChat] = useState(false)
+  // Help panel
+  const [showHelp, setShowHelp] = useState(false)
 
   // Derived: first selected ID (for single-object contexts like color picker)
   const selectedId = useMemo(
@@ -372,6 +375,22 @@ export default function Board({ userName, boardId }: BoardProps) {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
       switch (e.key.toLowerCase()) {
+        case 'z':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            if (e.shiftKey) {
+              redo()
+            } else {
+              undo()
+            }
+          }
+          break
+        case 'y':
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            redo()
+          }
+          break
         case 'v':
           if ((e.ctrlKey || e.metaKey) && clipboardRef.current) {
             e.preventDefault()
@@ -454,7 +473,7 @@ export default function Board({ userName, boardId }: BoardProps) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedIds, deleteObject, objects, createObject])
+  }, [selectedIds, deleteObject, objects, createObject, undo, redo])
 
   // ---- Zoom controls ------------------------------------------------------
   const zoomIn = useCallback(() => {
@@ -565,6 +584,11 @@ export default function Board({ userName, boardId }: BoardProps) {
         onDelete={handleDelete}
         onColorToggle={handleColorToggle}
         selectedFill={selectedObj?.fill ?? null}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
+        onHelpToggle={() => setShowHelp((v) => !v)}
       />
 
       {/* Color picker popup */}
@@ -743,6 +767,9 @@ export default function Board({ userName, boardId }: BoardProps) {
           onClose={() => setShowChat(false)}
         />
       )}
+
+      {/* Help panel */}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   )
 }
