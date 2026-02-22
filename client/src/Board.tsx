@@ -13,6 +13,7 @@ import CursorBadge from './components/CursorBadge'
 import type { BoardObject, ToolType } from './types'
 import { cullObjects, type Viewport } from './utils/viewportCulling'
 import { intersects, normalizeRect, getSelectionBounds, type SelectionRect } from './utils/selection'
+import { copyObjects, pasteObjects, type ClipboardState } from './utils/clipboard'
 
 // ---------------------------------------------------------------------------
 // Frame grouping: detect which frame (if any) fully contains an object
@@ -80,6 +81,8 @@ export default function Board({ userName, boardId }: BoardProps) {
   // Rubber-band selection
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
+  // Clipboard for copy/paste
+  const clipboardRef = useRef<ClipboardState | null>(null)
   // AI Chat panel
   const [showChat, setShowChat] = useState(false)
 
@@ -369,10 +372,32 @@ export default function Board({ userName, boardId }: BoardProps) {
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
       switch (e.key.toLowerCase()) {
-        case 'v': setActiveTool('select'); break
+        case 'v':
+          if ((e.ctrlKey || e.metaKey) && clipboardRef.current) {
+            e.preventDefault()
+            const { objects: newObjs, newPasteCount } = pasteObjects(clipboardRef.current)
+            clipboardRef.current = { ...clipboardRef.current, pasteCount: newPasteCount }
+            const pastedIds = new Set<string>()
+            for (const obj of newObjs) {
+              createObject(obj)
+              pastedIds.add(obj.id)
+            }
+            setSelectedIds(pastedIds)
+          } else if (!e.ctrlKey && !e.metaKey) {
+            setActiveTool('select')
+          }
+          break
         case 's': setActiveTool('sticky'); break
         case 'r': setActiveTool('rect'); break
-        case 'c': setActiveTool('circle'); break
+        case 'c':
+          if ((e.ctrlKey || e.metaKey) && selectedIds.size > 0) {
+            e.preventDefault()
+            const result = copyObjects(objects, selectedIds)
+            if (result) clipboardRef.current = result
+          } else if (!e.ctrlKey && !e.metaKey) {
+            setActiveTool('circle')
+          }
+          break
         case 't': setActiveTool('text'); break
         case 'f': setActiveTool('frame'); break
         case 'l': setActiveTool('line'); setLineStart(null); break
