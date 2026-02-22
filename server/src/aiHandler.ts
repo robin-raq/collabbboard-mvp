@@ -41,14 +41,14 @@ const tools: Anthropic.Tool[] = [
   {
     name: 'createObject',
     description:
-      'Create a new object on the whiteboard. Supported types: sticky (sticky note), rect (rectangle), circle, text, frame. Returns the created object ID.',
+      'Create a new object on the whiteboard. Supported types: sticky (sticky note), rect (rectangle), circle, text, frame, line (line/arrow connector). Returns the created object ID.',
     input_schema: {
       type: 'object' as const,
       properties: {
         type: {
           type: 'string',
-          enum: ['sticky', 'rect', 'circle', 'text', 'frame'],
-          description: 'The type of object to create',
+          enum: ['sticky', 'rect', 'circle', 'text', 'frame', 'line'],
+          description: 'The type of object to create. Use "line" for arrows/connectors between objects.',
         },
         x: {
           type: 'number',
@@ -60,11 +60,11 @@ const tools: Anthropic.Tool[] = [
         },
         width: {
           type: 'number',
-          description: 'Width of the object. Defaults: sticky=200, rect=150, circle=100, text=200, frame=400',
+          description: 'Width of the object. Defaults: sticky=200, rect=150, circle=100, text=200, frame=400, line=2',
         },
         height: {
           type: 'number',
-          description: 'Height of the object. Defaults: sticky=150, rect=100, circle=100, text=50, frame=300',
+          description: 'Height of the object. Defaults: sticky=150, rect=100, circle=100, text=50, frame=300, line=2',
         },
         text: {
           type: 'string',
@@ -72,15 +72,32 @@ const tools: Anthropic.Tool[] = [
         },
         fill: {
           type: 'string',
-          description: 'CSS color string. Common sticky note colors: #FFD700 (yellow), #98FB98 (green), #87CEEB (blue), #FFB6C1 (pink), #DDA0DD (purple), #FFA07A (orange)',
+          description: 'CSS color string. Common sticky note colors: #FFD700 (yellow), #98FB98 (green), #87CEEB (blue), #FFB6C1 (pink), #DDA0DD (purple), #FFA07A (orange). Lines default to #333333.',
         },
         fontSize: {
           type: 'number',
           description: 'Font size for text objects (default 14)',
         },
+        points: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'For line type only. Array of [x1, y1, x2, y2] relative to (x, y). E.g., [0, 0, 200, 0] draws a horizontal line 200px to the right from (x, y).',
+        },
+        fromId: {
+          type: 'string',
+          description: 'For line type only. ID of the object this line starts from (connector source).',
+        },
+        toId: {
+          type: 'string',
+          description: 'For line type only. ID of the object this line ends at (connector target).',
+        },
+        arrowEnd: {
+          type: 'boolean',
+          description: 'For line type only. Show arrowhead at the end of the line. Default true.',
+        },
         skipCollisionCheck: {
           type: 'boolean',
-          description: 'Set to true when placing objects intentionally inside frames or in a pre-calculated layout (e.g., SWOT, retro, kanban). Skips auto-repositioning so objects land at the exact requested coordinates.',
+          description: 'Set to true when placing objects intentionally inside frames or in a pre-calculated layout (e.g., SWOT, retro, kanban). Skips auto-repositioning so objects land at the exact requested coordinates. Lines always skip collision check automatically.',
         },
         parentId: {
           type: 'string',
@@ -179,6 +196,7 @@ const defaultSizes: Record<string, { width: number; height: number }> = {
   circle: { width: 100, height: 100 },
   text: { width: 200, height: 50 },
   frame: { width: 400, height: 300 },
+  line: { width: 2, height: 2 },
 }
 
 const defaultColors: Record<string, string> = {
@@ -187,6 +205,7 @@ const defaultColors: Record<string, string> = {
   circle: '#DDA0DD',
   text: '#333333',
   frame: '#E8E8E8',
+  line: '#333333',
 }
 
 /**
@@ -272,8 +291,9 @@ export function executeCreateObject(
   const width = (input.width as number) || defaults.width
   const height = (input.height as number) || defaults.height
 
-  // Find non-overlapping position (skip when intentionally placing inside frames/layouts)
-  const pos = input.skipCollisionCheck
+  // Find non-overlapping position (skip for lines, frames/layouts with skipCollisionCheck)
+  const skipCollision = input.skipCollisionCheck || type === 'line'
+  const pos = skipCollision
     ? { x: requestedX, y: requestedY }
     : findOpenPosition(requestedX, requestedY, width, height, objectsMap)
 
@@ -291,6 +311,15 @@ export function executeCreateObject(
   if (input.text !== undefined) obj.text = input.text as string
   if (input.fontSize !== undefined) obj.fontSize = input.fontSize as number
   if (input.parentId !== undefined) obj.parentId = input.parentId as string
+
+  // Line/connector-specific fields
+  if (input.points !== undefined) obj.points = input.points as number[]
+  if (input.fromId !== undefined) obj.fromId = input.fromId as string
+  if (input.toId !== undefined) obj.toId = input.toId as string
+  // Default arrowEnd to true for lines, allow explicit override
+  if (type === 'line') {
+    obj.arrowEnd = input.arrowEnd !== undefined ? input.arrowEnd as boolean : true
+  }
 
   // Auto-detect parent frame: if no explicit parentId and this isn't a frame,
   // check if the object is fully contained inside an existing frame
@@ -402,6 +431,9 @@ export function buildBoardContext(objectsMap: Y.Map<BoardObject>): string {
     let desc = `- ID: "${obj.id}" | Type: ${obj.type} | Position: (${obj.x}, ${obj.y}) | Size: ${obj.width}x${obj.height} | Color: ${obj.fill}`
     if (obj.text) desc += ` | Text: "${obj.text}"`
     if (obj.parentId) desc += ` | Parent: "${obj.parentId}"`
+    if (obj.fromId) desc += ` | From: "${obj.fromId}"`
+    if (obj.toId) desc += ` | To: "${obj.toId}"`
+    if (obj.points) desc += ` | Points: [${obj.points.join(', ')}]`
     return desc
   })
 
@@ -455,8 +487,18 @@ IMPORTANT RULES:
 17. Example: Frame at (50, 50) size 400x300 → place stickies starting at (65, 85) with 200px wide stickies in 1 column, or use 170px wide stickies for 2 columns at x=65 and x=245.
 18. For SWOT with stickies: use frames of at least 450x350, place 180x120 stickies starting at frame.x+15, frame.y+35, with 10px gaps.
 
+**Lines, arrows, and connectors (flowcharts/diagrams):**
+19. Use type "line" to draw arrows/connectors between objects. The "points" array is [x1, y1, x2, y2] RELATIVE to the line's (x, y) position.
+20. For a horizontal arrow from point A to point B: set x = A.x + A.width, y = A.y + A.height/2, points = [0, 0, gapX, 0] where gapX = B.x - (A.x + A.width).
+21. For a vertical arrow: set x = A.x + A.width/2, y = A.y + A.height, points = [0, 0, 0, gapY] where gapY = B.y - (A.y + A.height).
+22. ALWAYS set fromId and toId to the IDs of the connected objects. This creates a semantic connector.
+23. arrowEnd defaults to true (shows arrowhead). Set to false for plain lines.
+24. Lines always skip collision check — place them at exact coordinates.
+25. For flowcharts: first create all boxes (rect or sticky), then create lines connecting them. Calculate line start/end from box positions and sizes.
+26. Example flowchart step: Box A at (100, 100) size 150x100, Box B at (100, 300) size 150x100. Arrow: x=175, y=200, points=[0, 0, 0, 100], fromId=A.id, toId=B.id.
+
 **Response:**
-14. Always respond with a brief, friendly message describing what you did after using tools.`
+27. Always respond with a brief, friendly message describing what you did after using tools.`
 
 // ---------------------------------------------------------------------------
 // Main Entry Point
@@ -482,7 +524,7 @@ const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
  * Returns the model name (currently same model, but allows easy swap to Haiku
  * when available on the API plan).
  */
-const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?|chart|diagram|visuali[sz]e|bar\s*chart|pie\s*chart|map|board|pros?\s*(and|&)\s*cons?|compare|comparison|list\s+of|brainstorm|matrix|timeline|roadmap|workflow|priorit|categor)\b/i
+const COMPLEX_PATTERNS = /\b(grid|layout|arrange|template|retrospective|swot|journey|kanban|columns?|rows?|organiz|section|multiple|plan(ning)?|flow\s*chart|chart|diagram|visuali[sz]e|bar\s*chart|pie\s*chart|map|board|pros?\s*(and|&)\s*cons?|compare|comparison|list\s+of|brainstorm|matrix|timeline|roadmap|workflow|priorit|categor|connect|arrow)\b/i
 
 export function selectModel(userMessage: string): string {
   if (COMPLEX_PATTERNS.test(userMessage) || userMessage.length > 120) {

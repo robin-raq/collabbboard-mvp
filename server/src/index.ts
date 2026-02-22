@@ -154,6 +154,7 @@ function registerDocUpdateListener(room: string, doc: Y.Doc): void {
     msg.set(update, 1)
 
     let sent = 0
+    const totalClients = wss.clients.size
     for (const client of wss.clients) {
       if (client.readyState === WebSocket.OPEN && socketRooms.get(client) === room) {
         client.send(msg)
@@ -163,6 +164,8 @@ function registerDocUpdateListener(room: string, doc: Y.Doc): void {
 
     if (sent > 0) {
       console.log(`[WS] Broadcast server-side update to ${sent} client(s) in room: ${room}`)
+    } else {
+      console.warn(`[WS] No clients found for server-side update in room: ${room} (total WS clients: ${totalClients}, rooms: ${[...new Set(socketRooms.values())].join(', ') || 'none'})`)
     }
   })
 }
@@ -336,9 +339,16 @@ const server = http.createServer(async (req, res) => {
       const roomId = boardId || 'mvp-board-1'
       const doc = await getOrCreateDoc(roomId)
 
+      const objectsMap = doc.getMap('objects')
+      const beforeCount = objectsMap.size
+
       console.log(`[AI] Processing command for room ${roomId}: "${message.slice(0, 80)}"`)
+      console.log(`[AI] Doc ${roomId} has ${beforeCount} objects before AI command (WS clients: ${wss.clients.size}, rooms: ${[...new Set(socketRooms.values())].join(', ') || 'none'})`)
 
       const result = await processAICommand(message, doc, { boardId: roomId })
+
+      const afterCount = objectsMap.size
+      console.log(`[AI] Doc ${roomId} now has ${afterCount} objects (was ${beforeCount}, delta: +${afterCount - beforeCount})`)
 
       // Mark room as dirty so the snapshot interval will save it
       dirtyRooms.add(roomId)

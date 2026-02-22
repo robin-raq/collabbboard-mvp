@@ -354,6 +354,13 @@ describe('isComplexCommand', () => {
     expect(isComplexCommand('visualize the data')).toBe(true)
   })
 
+  it('returns true for flowchart and connector commands', () => {
+    expect(isComplexCommand('create a flowchart')).toBe(true)
+    expect(isComplexCommand('make a flow chart')).toBe(true)
+    expect(isComplexCommand('connect the boxes with arrows')).toBe(true)
+    expect(isComplexCommand('add an arrow between them')).toBe(true)
+  })
+
   it('returns true for long commands (>120 chars)', () => {
     expect(isComplexCommand('I need you to create a board with multiple sections for our team planning session with columns for each team member')).toBe(true)
   })
@@ -725,6 +732,144 @@ describe('createObject with parentId', () => {
     )
 
     expect(result.parentId).toBe('some-frame-id')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createObject — line/arrow support for flowcharts/diagrams
+// ---------------------------------------------------------------------------
+
+describe('createObject with line/arrow type', () => {
+  it('creates a line with points', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 100, y: 100, points: [0, 0, 200, 100] },
+        objects
+      )
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.type).toBe('line')
+
+    const created = objects.get(result.id) as any
+    expect(created.type).toBe('line')
+    expect(created.points).toEqual([0, 0, 200, 100])
+    expect(created.x).toBe(100)
+    expect(created.y).toBe(100)
+  })
+
+  it('creates a line with fromId and toId for connectors', () => {
+    const objects = createTestMap()
+
+    // Create two objects to connect
+    const box1 = JSON.parse(
+      executeCreateObject(
+        { type: 'rect', x: 100, y: 100, width: 150, height: 100, text: 'Start' },
+        objects
+      )
+    )
+    const box2 = JSON.parse(
+      executeCreateObject(
+        { type: 'rect', x: 400, y: 100, width: 150, height: 100, text: 'End' },
+        objects
+      )
+    )
+
+    // Create a line connecting them
+    const lineResult = JSON.parse(
+      executeCreateObject(
+        {
+          type: 'line', x: 250, y: 150,
+          points: [0, 0, 150, 0],
+          fromId: box1.id, toId: box2.id,
+          arrowEnd: true,
+        },
+        objects
+      )
+    )
+
+    expect(lineResult.success).toBe(true)
+    const created = objects.get(lineResult.id) as any
+    expect(created.fromId).toBe(box1.id)
+    expect(created.toId).toBe(box2.id)
+    expect(created.arrowEnd).toBe(true)
+  })
+
+  it('defaults arrowEnd to true for lines', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 0, y: 0, points: [0, 0, 100, 0] },
+        objects
+      )
+    )
+
+    const created = objects.get(result.id) as any
+    expect(created.arrowEnd).toBe(true)
+  })
+
+  it('allows arrowEnd to be set to false', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 0, y: 0, points: [0, 0, 100, 0], arrowEnd: false },
+        objects
+      )
+    )
+
+    const created = objects.get(result.id) as any
+    expect(created.arrowEnd).toBe(false)
+  })
+
+  it('uses default dimensions for line type', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 50, y: 50 },
+        objects
+      )
+    )
+
+    const created = objects.get(result.id) as any
+    // Lines should have default dimensions
+    expect(created.width).toBeDefined()
+    expect(created.height).toBeDefined()
+  })
+
+  it('uses default color for line type', () => {
+    const objects = createTestMap()
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 0, y: 0 },
+        objects
+      )
+    )
+
+    const created = objects.get(result.id) as any
+    expect(created.fill).toBeDefined()
+    expect(created.fill).not.toBe('')
+  })
+
+  it('skips collision check for lines (lines always at exact position)', () => {
+    const objects = createTestMap()
+    // Place a blocker
+    objects.set('blocker', {
+      id: 'blocker', type: 'rect', x: 100, y: 100,
+      width: 200, height: 150, fill: '#FFD700',
+    })
+
+    // Line placed at overlapping position should NOT be nudged
+    const result = JSON.parse(
+      executeCreateObject(
+        { type: 'line', x: 100, y: 100, points: [0, 0, 200, 0] },
+        objects
+      )
+    )
+
+    // Lines should always be placed at exact position
+    expect(result.x).toBe(100)
+    expect(result.y).toBe(100)
   })
 })
 
