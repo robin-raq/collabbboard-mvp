@@ -21,7 +21,7 @@ import http from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import * as Y from 'yjs'
 import { supabase } from './db/supabase.js'
-import { processAICommand } from './aiHandler.js'
+import { processAICommand, processAICommandStream } from './aiHandler.js'
 import { flushTraces, isLangfuseEnabled } from './langfuse.js'
 import {
   isOriginAllowed,
@@ -361,6 +361,62 @@ const server = http.createServer(async (req, res) => {
       console.error('[AI] Error processing command:', err)
       res.writeHead(500, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'AI processing failed', details: String(err) }))
+    }
+    return
+  }
+
+  // POST /api/ai/stream — Stream AI responses via Server-Sent Events
+  if (req.method === 'POST' && req.url === '/api/ai/stream') {
+    try {
+      const body = JSON.parse(await readBody(req))
+      const { message, boardId } = body
+
+      if (!isAIMessageValid(message)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid message: must be 1-2000 characters' }))
+        return
+      }
+
+      const roomId = boardId || DEFAULT_BOARD_ID
+      const doc = await getOrCreateDoc(roomId)
+
+      // Set SSE headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': corsOrigin,
+      })
+
+      // Set up abort on client disconnect
+      const controller = new AbortController()
+      req.on('close', () => controller.abort())
+
+      // 60-second timeout
+      const timeout = setTimeout(() => controller.abort(), 60_000)
+
+      try {
+        const gen = processAICommandStream(message, doc, { boardId: roomId }, controller.signal)
+
+        for await (const event of gen) {
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } finally {
+        clearTimeout(timeout)
+      }
+
+      // Mark room as dirty so the snapshot interval will save it
+      dirtyRooms.add(roomId)
+
+      res.end()
+    } catch (err) {
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'AI stream failed', details: String(err) }))
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: String(err) })}\n\n`)
+        res.end()
+      }
     }
     return
   }
