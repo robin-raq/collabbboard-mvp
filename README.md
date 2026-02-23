@@ -4,6 +4,8 @@ A real-time collaborative whiteboard with AI assistance. Multiple users share an
 
 **Live:** [collabboard.raqdrobinson.com](https://collabboard.raqdrobinson.com)
 
+![CollabBoard Demo](docs/collabboard-demo.gif)
+
 ## Features
 
 - **Infinite canvas** — scroll/trackpad pan, Ctrl+scroll zoom (0.1x–5x), Space+drag pan, with viewport culling for performance
@@ -210,6 +212,7 @@ Both services auto-deploy when you push to `main`.
 - **Version history** — Yjs stores document history internally. Expose periodic snapshots to let users rewind a board to any previous state — the infrastructure is already there.
 - **Export** — PNG, SVG, and PDF export of boards for sharing outside the app.
 - **Prompt caching** — Anthropic's prompt caching for the system prompt (board context + tool definitions), which is largely static between commands in the same session. Estimated ~30% additional cost reduction on top of model routing.
+- **Y.Doc as single source of truth** — Replace the current pattern of syncing Yjs observer data into React state with `useSyncExternalStore`, subscribing directly to the Y.Doc. This eliminates the synchronous observer read workaround (Yjs invalidates event data after the callback returns), removes the duplicated state copy, and integrates properly with React concurrent features like Suspense and transitions.
 - **Mobile / touch support** — Touch gestures for pan, zoom, drag, and rotate on tablets. Konva supports touch events natively.
 
 ## License
