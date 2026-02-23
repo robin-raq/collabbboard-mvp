@@ -8,6 +8,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { PRODUCTION_HOST } from '../constants'
+import { extractPanTarget } from '../utils/panTarget'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,7 @@ interface Message {
 interface ChatPanelProps {
   boardId: string
   onClose: () => void
+  onPanTo?: (x: number, y: number) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ const API_URL = getApiUrl()
 // Component
 // ---------------------------------------------------------------------------
 
-export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
+export default function ChatPanel({ boardId, onClose, onPanTo }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
@@ -113,6 +115,10 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
       }
 
       setMessages((prev) => [...prev, assistantMsg])
+
+      // Auto-pan viewport to where AI created/moved objects
+      const target = extractPanTarget(data.actions ?? [])
+      if (target && onPanTo) onPanTo(target.x, target.y)
     } catch (err) {
       const errorMsg: Message = {
         id: `err-${Date.now()}`,
@@ -123,7 +129,7 @@ export default function ChatPanel({ boardId, onClose }: ChatPanelProps) {
     } finally {
       setLoading(false)
     }
-  }, [input, loading, boardId])
+  }, [input, loading, boardId, onPanTo])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

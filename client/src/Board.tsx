@@ -591,6 +591,14 @@ export default function Board({ userName, boardId }: BoardProps) {
     setStagePos({ x: 0, y: 0 })
   }, [])
 
+  // ---- Pan to world coordinate (used by AI auto-pan) -----------------------
+  const panTo = useCallback((worldX: number, worldY: number) => {
+    setStagePos({
+      x: size.w / 2 - worldX * scale,
+      y: size.h / 2 - worldY * scale,
+    })
+  }, [scale, size.w, size.h])
+
   // ---- Frame-aware update: when a frame moves, move its children too ------
   const handleObjectUpdate = useCallback(
     (id: string, updates: Partial<BoardObject>) => {
@@ -866,6 +874,7 @@ export default function Board({ userName, boardId }: BoardProps) {
         <ChatPanel
           boardId={boardId || 'mvp-board-1'}
           onClose={() => setShowChat(false)}
+          onPanTo={panTo}
         />
       )}
 
