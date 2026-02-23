@@ -25,6 +25,7 @@ import {
   executeMoveObject,
   executeGetBoardState,
   buildBoardContext,
+  SYSTEM_PROMPT,
 } from '../aiHandler.js'
 
 // ---------------------------------------------------------------------------
@@ -1110,5 +1111,40 @@ describe('processAICommand — command cache integration', () => {
     expect(alpha.fill).toBe('#87CEEB') // blue
     expect(beta).toBeDefined()
     expect(beta.fill).toBe('#FFB6C1') // pink
+  })
+})
+
+// ---------------------------------------------------------------------------
+// SYSTEM_PROMPT compression tests
+// ---------------------------------------------------------------------------
+
+describe('SYSTEM_PROMPT', () => {
+  it('is exported and non-empty', () => {
+    expect(typeof SYSTEM_PROMPT).toBe('string')
+    expect(SYSTEM_PROMPT.length).toBeGreaterThan(100)
+  })
+
+  it('contains critical overlap avoidance instruction', () => {
+    expect(SYSTEM_PROMPT).toMatch(/overlap/i)
+    expect(SYSTEM_PROMPT).toMatch(/bounding\s*box/i)
+  })
+
+  it('contains skipCollisionCheck instruction for layouts', () => {
+    expect(SYSTEM_PROMPT).toMatch(/skipCollisionCheck/i)
+  })
+
+  it('contains parentId instruction for frame containment', () => {
+    expect(SYSTEM_PROMPT).toMatch(/parentId/i)
+  })
+
+  it('contains line/connector instructions', () => {
+    expect(SYSTEM_PROMPT).toMatch(/line|connector|arrow/i)
+    expect(SYSTEM_PROMPT).toMatch(/fromId/i)
+    expect(SYSTEM_PROMPT).toMatch(/toId/i)
+  })
+
+  it('is under 1500 characters (compressed from ~2700)', () => {
+    // After compression, the prompt should be significantly shorter
+    expect(SYSTEM_PROMPT.length).toBeLessThan(1500)
   })
 })
