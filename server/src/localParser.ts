@@ -260,7 +260,7 @@ function isCreateCommand(msg: string): boolean {
 // ---------------------------------------------------------------------------
 
 function handleRetroBoard(
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const actions: ToolAction[] = []
   const gap = 20
@@ -316,7 +316,7 @@ function handleRetroBoard(
 
 function handleCreateGrid(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const dims = extractGridDimensions(msg)!
   const { cols, rows } = dims
@@ -382,11 +382,11 @@ function handleCreateGrid(
 }
 
 function handleArrangeGrid(
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   // Find all sticky notes on the board
   const stickies: Array<{ id: string; width: number; height: number }> = []
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     if (obj.type === 'sticky') {
       stickies.push({ id, width: obj.width || 200, height: obj.height || 150 })
     }
@@ -423,7 +423,7 @@ function handleArrangeGrid(
 
 function handleUpdateColor(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const color = extractColor(msg)
   if (!color) {
@@ -437,7 +437,7 @@ function handleUpdateColor(
   let typeMatchId: string | null = null
 
   // Two-pass: first prioritize text content match, then fall back to type match
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     // Match by text content mentioned in the command (highest priority)
     if (obj.text && lower.includes(obj.text.toLowerCase())) {
       targetId = id
@@ -472,7 +472,7 @@ function handleUpdateColor(
 
 function handleCreateFrame(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const frameName = extractFrameName(msg) || 'Untitled Frame'
   const position = extractPosition(msg) || { x: 200, y: 100 }
@@ -498,7 +498,7 @@ function handleCreateFrame(
 
 function handleMoveByColor(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const color = extractColor(msg)
   const direction = extractDirection(msg)
@@ -508,7 +508,7 @@ function handleMoveByColor(
 
   // Find all objects matching that color
   const matching: Array<{ id: string; x: number; y: number }> = []
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     if (obj.fill === color) {
       matching.push({ id, x: obj.x, y: obj.y })
     }
@@ -549,44 +549,44 @@ function handleMoveByColor(
 
 function handleResizeFrame(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const lower = msg.toLowerCase()
 
   // Find the target frame
   let targetFrameId: string | null = null
-  let _targetFrame: any = null
+  let targetFrame: Y.Map<unknown> | null = null
 
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     if (obj.type !== 'frame') return
 
     // Match by text content if mentioned
     if (obj.text && lower.includes(obj.text.toLowerCase())) {
       targetFrameId = id
-      _targetFrame = obj
+      targetFrame = obj
     }
 
     // Fallback: first frame found
     if (!targetFrameId) {
       targetFrameId = id
-      _targetFrame = obj
+      targetFrame = obj
     }
   })
 
-  if (!targetFrameId || !_targetFrame) {
+  if (!targetFrameId || !targetFrame) {
     return { message: "I couldn't find a frame on the board to resize. Create a frame first!", actions: [] }
   }
 
   // Find all non-frame objects that overlap with the frame
-  const frameX = _targetFrame.x as number
-  const frameY = _targetFrame.y as number
-  const frameW = _targetFrame.width as number
-  const frameH = _targetFrame.height as number
+  const frameX = targetFrame.x as number
+  const frameY = targetFrame.y as number
+  const frameW = targetFrame.width as number
+  const frameH = targetFrame.height as number
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   let hasContents = false
 
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     if (id === targetFrameId || obj.type === 'frame') return
 
     const objX = obj.x as number
@@ -608,7 +608,7 @@ function handleResizeFrame(
   })
 
   if (!hasContents) {
-    return { message: `The frame "${_targetFrame.text || 'Untitled'}" appears to be empty. Nothing to resize to.`, actions: [] }
+    return { message: `The frame "${targetFrame.text || 'Untitled'}" appears to be empty. Nothing to resize to.`, actions: [] }
   }
 
   // Add padding
@@ -620,7 +620,7 @@ function handleResizeFrame(
   const result = executeUpdateObject(input, objectsMap)
 
   return {
-    message: `Resized the frame "${_targetFrame.text || 'Untitled'}" to fit its contents (${Math.round(newWidth)}x${Math.round(newHeight)}).`,
+    message: `Resized the frame "${targetFrame.text || 'Untitled'}" to fit its contents (${Math.round(newWidth)}x${Math.round(newHeight)}).`,
     actions: [{ tool: 'updateObject', input, result }],
   }
 }
@@ -630,11 +630,11 @@ function handleResizeFrame(
 // ---------------------------------------------------------------------------
 
 function handleSpaceEvenly(
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   // Collect all non-frame objects
   const objects: Array<{ id: string; x: number; y: number; width: number; height: number }> = []
-  objectsMap.forEach((obj: any, id: string) => {
+  objectsMap.forEach((obj: Y.Map<unknown>, id: string) => {
     if (obj.type !== 'frame') {
       objects.push({ id, x: obj.x, y: obj.y, width: obj.width || 200, height: obj.height || 150 })
     }
@@ -675,7 +675,7 @@ function handleSpaceEvenly(
 // ---------------------------------------------------------------------------
 
 function handleSwotTemplate(
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const actions: ToolAction[] = []
   const gap = 20
@@ -724,7 +724,7 @@ function handleSwotTemplate(
 
 function handleJourneyMap(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const stageCount = extractStageCount(msg)
   const actions: ToolAction[] = []
@@ -768,7 +768,7 @@ function handleJourneyMap(
 
 function handleCreateObject(
   msg: string,
-  objectsMap: Y.Map<any>
+  objectsMap: Y.Map<Y.Map<unknown>>
 ): ParsedCommand {
   const objType = extractObjectType(msg)
   const color = extractColor(msg) || (objType === 'sticky' ? '#FFD700' : '#87CEEB')
@@ -798,7 +798,7 @@ function handleCreateObject(
 // ---------------------------------------------------------------------------
 
 export function parseCommand(message: string, doc: Y.Doc): ParsedCommand {
-  const objectsMap = doc.getMap('objects') as Y.Map<any>
+  const objectsMap = doc.getMap('objects') as Y.Map<Y.Map<unknown>>
 
   // Order matters — check most specific/complex patterns first
 
