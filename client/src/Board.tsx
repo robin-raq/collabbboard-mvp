@@ -233,10 +233,8 @@ export default function Board({ userName, boardId }: BoardProps) {
   // ---- Rubber-band selection: mouse down on empty canvas -------------------
   const handleStageMouseDown = useCallback(
     (e: Konva.KonvaEventObject<MouseEvent>) => {
-      if (e.target !== e.target.getStage()) return
-
-      // Space + left-click drag OR middle-mouse drag = pan
-      if (spaceHeld || e.evt.button === 1) {
+      // Middle-mouse drag = pan (works anywhere on canvas, even over objects)
+      if (e.evt.button === 1) {
         const stage = stageRef.current
         if (stage) {
           const pointer = stage.getPointerPosition()
@@ -247,7 +245,26 @@ export default function Board({ userName, boardId }: BoardProps) {
               stageX: stagePos.x,
               stageY: stagePos.y,
             }
-            if (e.evt.button === 1) setMiddlePanning(true)
+            setMiddlePanning(true)
+          }
+        }
+        return
+      }
+
+      if (e.target !== e.target.getStage()) return
+
+      // Space + left-click drag = pan
+      if (spaceHeld) {
+        const stage = stageRef.current
+        if (stage) {
+          const pointer = stage.getPointerPosition()
+          if (pointer) {
+            panStartRef.current = {
+              x: pointer.x,
+              y: pointer.y,
+              stageX: stagePos.x,
+              stageY: stagePos.y,
+            }
           }
         }
         return
