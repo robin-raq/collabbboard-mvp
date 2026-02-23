@@ -1,15 +1,23 @@
 /**
- * ChatPanel — AI Chat Side Panel
+ * ChatPanel — AI Chat Side Panel (SSE Streaming)
  *
  * Slide-in panel from the right edge for sending AI commands.
- * Communicates with POST /api/ai on the server, which uses
- * Claude tool-calling to mutate the board Y.Doc.
+ * Streams responses from POST /api/ai/stream via Server-Sent Events
+ * so users see progress in real-time (status → tool results → done).
+ *
+ * Features:
+ *  - Incremental action badges as tool_result events arrive
+ *  - Status text updates (Thinking... → Creating objects...)
+ *  - Cancel button to abort in-progress requests
+ *  - "(instant)" badge for cache-hit responses
+ *  - Auto-pan to created/moved objects on done
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { PRODUCTION_HOST } from '../constants'
 import { extractPanTarget } from '../utils/panTarget'
 import type { ToolAction } from '../../../shared/types'
+import type { AIStreamEvent } from '../../../shared/aiStreamTypes'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,6 +28,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   actions?: ToolAction[]
+  cached?: boolean
 }
 
 interface ChatPanelProps {
@@ -49,6 +58,61 @@ function getApiUrl(): string {
 const API_URL = getApiUrl()
 
 // ---------------------------------------------------------------------------
+// SSE Stream Consumer
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse SSE events from a streaming Response body.
+ * Calls `onEvent` for each parsed AIStreamEvent.
+ */
+async function consumeSSEStream(
+  response: Response,
+  onEvent: (event: AIStreamEvent) => void,
+): Promise<void> {
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error('Response body is not readable')
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Process complete SSE lines (data: {...}\n\n)
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? '' // Keep incomplete last line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6)) as AIStreamEvent
+            onEvent(event)
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+    }
+
+    // Process any remaining data in buffer
+    if (buffer.startsWith('data: ')) {
+      try {
+        const event = JSON.parse(buffer.slice(6)) as AIStreamEvent
+        onEvent(event)
+      } catch {
+        // Skip malformed
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -62,17 +126,27 @@ export default function ChatPanel({ boardId, onClose, onPanTo }: ChatPanelProps)
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [streamStatus, setStreamStatus] = useState<string>('')
+  const [streamActions, setStreamActions] = useState<ToolAction[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages or streaming updates
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, streamActions, streamStatus])
 
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  const cancelRequest = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
   }, [])
 
   const sendMessage = useCallback(async () => {
@@ -88,41 +162,97 @@ export default function ChatPanel({ boardId, onClose, onPanTo }: ChatPanelProps)
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setLoading(true)
+    setStreamStatus('Thinking...')
+    setStreamActions([])
+
+    const controller = new AbortController()
+    abortRef.current = controller
 
     try {
-      const res = await fetch(`${API_URL}/api/ai`, {
+      const res = await fetch(`${API_URL}/api/ai/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: trimmed, boardId }),
+        signal: controller.signal,
       })
 
       if (!res.ok) {
         throw new Error(`Server returned ${res.status}`)
       }
 
-      const data = await res.json()
+      // Collect streamed events
+      const collectedActions: ToolAction[] = []
+      let finalMessage = ''
+      let isCached = false
+
+      await consumeSSEStream(res, (event) => {
+        switch (event.type) {
+          case 'status':
+            setStreamStatus(event.status === 'thinking' ? 'Thinking...' : 'Creating objects...')
+            break
+
+          case 'tool_result':
+            collectedActions.push(event.action)
+            setStreamActions([...collectedActions])
+            setStreamStatus('Creating objects...')
+            break
+
+          case 'text_delta':
+            // Accumulate response text
+            finalMessage += event.content
+            break
+
+          case 'done':
+            finalMessage = event.message || finalMessage || 'Done!'
+            isCached = !!event.cached
+            // Use actions from done event if present, otherwise collected tool_results
+            if (event.actions?.length) {
+              collectedActions.push(...event.actions.filter(
+                (a) => !collectedActions.some((c) => c.result === a.result)
+              ))
+            }
+            break
+
+          case 'error':
+            throw new Error(event.error)
+        }
+      })
 
       const assistantMsg: Message = {
         id: `asst-${Date.now()}`,
         role: 'assistant',
-        content: data.message || 'Done!',
-        actions: data.actions,
+        content: finalMessage,
+        actions: collectedActions,
+        cached: isCached,
       }
 
       setMessages((prev) => [...prev, assistantMsg])
 
       // Auto-pan viewport to where AI created/moved objects
-      const target = extractPanTarget(data.actions ?? [])
+      const target = extractPanTarget(collectedActions)
       if (target && onPanTo) onPanTo(target.x, target.y)
     } catch (err) {
-      const errorMsg: Message = {
-        id: `err-${Date.now()}`,
-        role: 'assistant',
-        content: `Sorry, something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User cancelled — add a cancelled message
+        const cancelMsg: Message = {
+          id: `cancel-${Date.now()}`,
+          role: 'assistant',
+          content: 'Request cancelled.',
+        }
+        setMessages((prev) => [...prev, cancelMsg])
+      } else {
+        const errorMsg: Message = {
+          id: `err-${Date.now()}`,
+          role: 'assistant',
+          content: `Sorry, something went wrong: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        }
+        setMessages((prev) => [...prev, errorMsg])
       }
-      setMessages((prev) => [...prev, errorMsg])
     } finally {
       setLoading(false)
+      setStreamStatus('')
+      setStreamActions([])
+      abortRef.current = null
     }
   }, [input, loading, boardId, onPanTo])
 
@@ -153,6 +283,9 @@ export default function ChatPanel({ boardId, onClose, onPanTo }: ChatPanelProps)
             <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>
               {msg.content}
             </div>
+            {msg.cached && (
+              <span style={instantBadgeStyle}>(instant)</span>
+            )}
             {msg.actions && msg.actions.length > 0 && (
               <div style={actionsContainerStyle}>
                 {msg.actions.map((action, i) => (
@@ -166,10 +299,29 @@ export default function ChatPanel({ boardId, onClose, onPanTo }: ChatPanelProps)
         ))}
         {loading && (
           <div style={assistantBubbleStyle}>
-            <div style={spinnerStyle} aria-label="Loading\u2026">
-              <span style={dotStyle}>&#9679;</span>
-              <span style={{ ...dotStyle, animationDelay: '0.2s' }}>&#9679;</span>
-              <span style={{ ...dotStyle, animationDelay: '0.4s' }}>&#9679;</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* Status text */}
+              <div style={{ fontSize: 12, color: '#6b7280' }}>
+                {streamStatus || 'Thinking...'}
+              </div>
+              {/* Incremental action badges */}
+              {streamActions.length > 0 && (
+                <div style={actionsContainerStyle}>
+                  {streamActions.map((action, i) => (
+                    <span key={i} style={streamingBadgeStyle}>
+                      {formatAction(action)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* Cancel button */}
+              <button
+                onClick={cancelRequest}
+                style={cancelBtnStyle}
+                aria-label="Cancel AI request"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         )}
@@ -307,10 +459,42 @@ const actionsContainerStyle: React.CSSProperties = {
 const actionBadgeStyle: React.CSSProperties = {
   display: 'inline-block',
   padding: '2px 8px',
-  background: 'rgba(255,255,255,0.2)',
+  background: 'rgba(0,0,0,0.08)',
   borderRadius: 6,
   fontSize: 11,
-  color: 'rgba(255,255,255,0.85)',
+  color: '#4b5563',
+}
+
+const streamingBadgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  padding: '2px 8px',
+  background: 'rgba(59, 130, 246, 0.1)',
+  borderRadius: 6,
+  fontSize: 11,
+  color: '#3B82F6',
+}
+
+const instantBadgeStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginTop: 4,
+  padding: '1px 6px',
+  background: 'rgba(16, 185, 129, 0.1)',
+  borderRadius: 4,
+  fontSize: 10,
+  color: '#059669',
+  fontWeight: 500,
+}
+
+const cancelBtnStyle: React.CSSProperties = {
+  alignSelf: 'flex-start',
+  padding: '3px 10px',
+  background: 'transparent',
+  border: '1px solid #d1d5db',
+  borderRadius: 6,
+  fontSize: 11,
+  color: '#6b7280',
+  cursor: 'pointer',
+  transition: 'background 0.15s, border-color 0.15s',
 }
 
 const inputContainerStyle: React.CSSProperties = {
@@ -345,17 +529,4 @@ const sendBtnStyle: React.CSSProperties = {
   fontWeight: 600,
   whiteSpace: 'nowrap',
   transition: 'opacity 0.15s, transform 0.1s',
-}
-
-const spinnerStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 4,
-  alignItems: 'center',
-}
-
-const dotStyle: React.CSSProperties = {
-  display: 'inline-block',
-  fontSize: 10,
-  color: '#9ca3af',
-  animation: 'pulse 1.4s ease-in-out infinite',
 }
