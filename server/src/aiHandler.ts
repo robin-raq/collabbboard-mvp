@@ -532,7 +532,7 @@ export interface AICommandMetadata {
   sessionId?: string
 }
 
-const MODEL_FAST = 'claude-3-5-haiku-20241022'
+const MODEL_FAST = 'claude-haiku-4-5-20250514'
 const MODEL_POWERFUL = 'claude-sonnet-4-20250514'
 
 /**

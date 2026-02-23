@@ -373,9 +373,9 @@ describe('isComplexCommand', () => {
 
 describe('selectModel', () => {
   it('returns Haiku for simple commands (cost optimization)', () => {
-    expect(selectModel('Add a sticky note')).toBe('claude-3-5-haiku-20241022')
-    expect(selectModel('Create a blue rectangle')).toBe('claude-3-5-haiku-20241022')
-    expect(selectModel('Change the color to green')).toBe('claude-3-5-haiku-20241022')
+    expect(selectModel('Add a sticky note')).toBe('claude-haiku-4-5-20250514')
+    expect(selectModel('Create a blue rectangle')).toBe('claude-haiku-4-5-20250514')
+    expect(selectModel('Change the color to green')).toBe('claude-haiku-4-5-20250514')
   })
 
   it('returns Sonnet for complex commands', () => {
