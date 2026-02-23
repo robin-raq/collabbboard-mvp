@@ -82,8 +82,9 @@ export default function Board({ userName, boardId }: BoardProps) {
   // Rubber-band selection
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null)
   const selectionStartRef = useRef<{ x: number; y: number } | null>(null)
-  // Space-to-pan
+  // Space-to-pan and middle-mouse pan
   const [spaceHeld, setSpaceHeld] = useState(false)
+  const [middlePanning, setMiddlePanning] = useState(false)
   // Track whether a rubber-band drag just completed, so onClick skips
   const didRubberBandRef = useRef(false)
   // Clipboard for copy/paste
@@ -105,6 +106,15 @@ export default function Board({ userName, boardId }: BoardProps) {
     const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight })
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Prevent default middle-click auto-scroll (browser "scroll ball" behavior)
+  useEffect(() => {
+    const preventMiddleClick = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault()
+    }
+    window.addEventListener('mousedown', preventMiddleClick)
+    return () => window.removeEventListener('mousedown', preventMiddleClick)
   }, [])
 
   // Viewport culling
@@ -225,8 +235,8 @@ export default function Board({ userName, boardId }: BoardProps) {
     (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (e.target !== e.target.getStage()) return
 
-      // Space + left-click drag = pan
-      if (spaceHeld) {
+      // Space + left-click drag OR middle-mouse drag = pan
+      if (spaceHeld || e.evt.button === 1) {
         const stage = stageRef.current
         if (stage) {
           const pointer = stage.getPointerPosition()
@@ -237,6 +247,7 @@ export default function Board({ userName, boardId }: BoardProps) {
               stageX: stagePos.x,
               stageY: stagePos.y,
             }
+            if (e.evt.button === 1) setMiddlePanning(true)
           }
         }
         return
@@ -257,9 +268,10 @@ export default function Board({ userName, boardId }: BoardProps) {
   // ---- Rubber-band selection: mouse up on stage ----------------------------
   const handleStageMouseUp = useCallback(
     (_e: Konva.KonvaEventObject<MouseEvent>) => {
-      // End space-to-pan
+      // End space-to-pan or middle-mouse pan
       if (panStartRef.current) {
         panStartRef.current = null
+        setMiddlePanning(false)
         didRubberBandRef.current = true // suppress the click that follows
         return
       }
@@ -741,7 +753,7 @@ export default function Board({ userName, boardId }: BoardProps) {
         onContextMenu={(e) => e.evt.preventDefault()}
         onClick={handleStageClick}
         onTap={handleStageClick}
-        style={{ position: 'relative', zIndex: 1, cursor: spaceHeld ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
+        style={{ position: 'relative', zIndex: 1, cursor: middlePanning ? 'grabbing' : spaceHeld ? 'grab' : activeTool === 'select' ? 'default' : 'crosshair' }}
       >
         {/* Objects layer */}
         <Layer>

@@ -173,6 +173,7 @@ const tools: Anthropic.Tool[] = [
       },
       required: ['id', 'x', 'y'],
     },
+    cache_control: { type: 'ephemeral' as const },
   },
 ]
 
@@ -418,14 +419,34 @@ function executeTool(
 // ---------------------------------------------------------------------------
 
 export function buildBoardContext(objectsMap: Y.Map<BoardObject>): string {
-  const objects: BoardObject[] = []
+  const allObjects: BoardObject[] = []
   objectsMap.forEach((obj) => {
-    objects.push(obj)
+    allObjects.push(obj)
   })
 
-  if (objects.length === 0) {
+  if (allObjects.length === 0) {
     return 'The board is currently empty. No objects exist yet.'
   }
+
+  // Compute bounding box from ALL objects so the AI knows where free space starts
+  const maxRight = Math.max(...allObjects.map((o) => o.x + o.width))
+  const maxBottom = Math.max(...allObjects.map((o) => o.y + o.height))
+
+  // Cap to nearest 30 objects (by proximity to center of occupied area) to reduce token usage
+  const totalCount = allObjects.length
+  let objects = allObjects
+  if (objects.length > 30) {
+    const cx = objects.reduce((s, o) => s + o.x, 0) / objects.length
+    const cy = objects.reduce((s, o) => s + o.y, 0) / objects.length
+    objects = [...objects].sort((a, b) => {
+      const da = (a.x - cx) ** 2 + (a.y - cy) ** 2
+      const db = (b.x - cx) ** 2 + (b.y - cy) ** 2
+      return da - db
+    })
+    objects.length = 30
+  }
+
+  const truncationNote = totalCount > 30 ? ` (showing nearest 30 of ${totalCount} total)` : ''
 
   const summary = objects.map((obj) => {
     let desc = `- ID: "${obj.id}" | Type: ${obj.type} | Position: (${obj.x}, ${obj.y}) | Size: ${obj.width}x${obj.height} | Color: ${obj.fill}`
@@ -437,11 +458,7 @@ export function buildBoardContext(objectsMap: Y.Map<BoardObject>): string {
     return desc
   })
 
-  // Compute bounding box so the AI knows where free space starts
-  const maxRight = Math.max(...objects.map((o) => o.x + o.width))
-  const maxBottom = Math.max(...objects.map((o) => o.y + o.height))
-
-  return `Current board objects (${objects.length} total):\n${summary.join('\n')}\n\nOccupied area bounding box: x:0-${maxRight}, y:0-${maxBottom}. Place new objects AFTER x:${maxRight + 30} (to the right) or AFTER y:${maxBottom + 30} (below) to avoid overlaps.`
+  return `Current board objects (${totalCount} total)${truncationNote}:\n${summary.join('\n')}\n\nOccupied area bounding box: x:0-${maxRight}, y:0-${maxBottom}. Place new objects AFTER x:${maxRight + 30} (to the right) or AFTER y:${maxBottom + 30} (below) to avoid overlaps.`
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +641,12 @@ export async function processAICommand(
     const response = await anthropic.messages.create({
       model: modelName,
       max_tokens: maxTokens,
-      system: SYSTEM_PROMPT,
+      temperature: 0,
+      system: [{
+        type: 'text' as const,
+        text: SYSTEM_PROMPT,
+        cache_control: { type: 'ephemeral' as const },
+      }],
       tools,
       messages,
     })
