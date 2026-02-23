@@ -30,3 +30,10 @@ export type BoardObject = {
 
 /** Active tool selected in the toolbar. */
 export type ToolType = 'select' | 'sticky' | 'rect' | 'circle' | 'text' | 'frame' | 'line' | 'arrow'
+
+/** A single tool-call action returned by the AI agent. */
+export interface ToolAction {
+  tool: string
+  input: Record<string, unknown>
+  result: string
+}

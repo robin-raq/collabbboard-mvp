@@ -33,16 +33,11 @@ import {
   executeUpdateObject,
   executeMoveObject,
 } from './aiHandler.js'
+import type { ToolAction } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface ToolAction {
-  tool: string
-  input: Record<string, unknown>
-  result: string
-}
 
 export interface ParsedCommand {
   message: string

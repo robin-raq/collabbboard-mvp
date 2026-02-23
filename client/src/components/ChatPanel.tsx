@@ -9,16 +9,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { PRODUCTION_HOST } from '../constants'
 import { extractPanTarget } from '../utils/panTarget'
+import type { ToolAction } from '../../../shared/types'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface ToolAction {
-  tool: string
-  input: Record<string, unknown>
-  result: string
-}
 
 interface Message {
   id: string

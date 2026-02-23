@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import * as Y from 'yjs'
 import { parseCommand } from './localParser.js'
 import { createTrace } from './langfuse.js'
-import type { ObjectType, BoardObject } from '../../shared/types.js'
+import type { ObjectType, BoardObject, ToolAction } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
 // Anthropic Client (conditional — null when API key is not set)
@@ -181,11 +181,7 @@ const tools: Anthropic.Tool[] = [
 // Tool Execution (exported for testing)
 // ---------------------------------------------------------------------------
 
-interface ToolAction {
-  tool: string
-  input: Record<string, unknown>
-  result: string
-}
+// ToolAction imported from shared/types
 
 function generateId(): string {
   return `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
