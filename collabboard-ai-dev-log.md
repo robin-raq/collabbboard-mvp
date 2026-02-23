@@ -5,7 +5,7 @@
 **Project:** CollabBoard — Real-time Collaborative Whiteboard with AI Agent
 **Timeline:** February 16–22, 2026 (7 days)
 **Commits:** 169 across the project
-**Tests:** 415 (190 server + 225 client)
+**Tests:** 426 (190 server + 236 client)
 **Source lines:** ~7,100 (source) + ~6,800 (tests) = ~13,900 total
 **Live URL:** [collabboard.raqdrobinson.com](https://collabboard.raqdrobinson.com)
 
@@ -14,7 +14,7 @@
 ## 1. Tools & Workflow
 
 ### Primary Tool: Claude Code CLI
-The entire codebase was developed using Claude Code (Anthropic's CLI agent). Claude Code ran as an interactive terminal session where I described features in natural language and it generated code, ran tests, and made commits.
+The entire codebase was developed using Claude Code (Anthropic's CLI agent). Claude Code ran as an interactive terminal session where I described features in natural language and it generated code, ran tests, and made commits. I also used Cursor at times to double-check the work of the Claude Code agent, to get a different explanation of the code, or to audit the codebase for performance and security bottlenecks.
 
 ### Supporting Tool: Chrome MCP (Model Context Protocol)
 Claude Code connected to my Chrome browser via the MCP extension to:
@@ -40,9 +40,13 @@ Claude Code connected to my Chrome browser via the MCP extension to:
 ## 2. Effective Prompts
 
 ### Prompt 1: Architecture scaffolding
-> "Build a real-time collaborative whiteboard. React + Konva.js frontend, Node.js WebSocket server, Yjs for CRDT sync. Clerk for auth. Start with sticky notes and rectangles on an infinite canvas."
+> Early on I was building with Liveblocks, which added unnecessary complexity. A cohort mate pointed out it wasn't in our requirements and I was overengineering the MVP. I made the decision to start fresh with a focused 4-hour plan using Yjs directly — no third-party CRDT service, just the raw library over WebSockets. I reprompted the AI with my presearch document and the assignment document, asking it to give me a barebones architecture that would meet only the MVP requirements and could be built in 4 hours.
 
-**Result:** Full monorepo scaffold with working real-time sync in ~2 hours. Generated the WebSocket binary protocol, Yjs integration hook, and Konva canvas setup.
+**Result:** CollabBoard MVP — 4-Hour Presearch & Architecture
+- **Timeline:** 4 hours to deployed MVP
+- **Testing Strategy:** Console-driven TDD for rapid iteration
+- **Deployment:** Vercel (frontend) + Railway (backend)
+- **Real-time:** Yjs + y-websocket (NO Liveblocks)
 
 ### Prompt 2: AI agent with TDD
 > "Add an AI chat panel. The server should use Anthropic's Claude with tool calling — 3 tools: createObject, updateObject, moveObject. Write TDD tests first. Also add a local regex parser as a fallback when no API key is configured."
@@ -50,51 +54,10 @@ Claude Code connected to my Chrome browser via the MCP extension to:
 **Result:** 73 TDD tests written first (20 for AI handler, 53 for local parser), then implementation. The local parser handles all 12 command patterns without any API calls — a graceful degradation I wouldn't have thought to build proactively.
 
 ### Prompt 3: Performance investigation
-> "Test by adding the 500 objects again" / "The performance with the 500 objects was still degraded"
+> "Test by adding another 500 objects" / "The performance with the 500 objects was still degraded — how can we improve it?"
 
 **Result:** Claude Code used Chrome MCP to inject 500 objects, measured FPS at 29 (degraded), identified Konva's canvas draw loop as the bottleneck (not React re-renders), and implemented a render budget that caps rendered objects at 150 sorted by distance to viewport center. P95 frame time dropped from 50ms+ to 45ms.
 
-### Prompt 4: Server hardening
-> "Commit and push everything minus the 500 objects and then address the server side improvements"
-
-**Result:** Three server improvements in one session: WebSocket perMessageDeflate compression (~70% bandwidth reduction), preemptive object count validation (reject BEFORE applying Yjs update instead of warning after), and idle room eviction (save to Supabase and destroy Y.Doc after 1 hour of inactivity).
-
-### Prompt 5: Code cleanup
-> "Finish the code cleanup first"
-
-**Result:** Claude Code explored the codebase, identified 2 dead component files (StickyNote.tsx, Rectangle.tsx superseded by BoardShape.tsx), an `as any` type assertion, and production console.log statements. Deleted 196 lines, fixed all issues, verified build and tests pass.
-
-### Prompt 6: Undo/redo implementation (TDD plan-first)
-> "Let's do undo/redo next. Enter plan mode."
-
-**Result:** Claude Code entered plan mode, explored the codebase, designed a 3-step TDD plan leveraging Yjs's built-in UndoManager. The plan specified `trackedOrigins: new Set([null])` to exclude remote changes and `captureTimeout: 500` to group rapid mutations. Wrote 15+ failing tests first, then implemented in useYjs.ts and wired keyboard shortcuts. Also added a HelpPanel and undo/redo toolbar buttons.
-
-### Prompt 7: AI flowchart/line support
-> "Add a line/arrow object type so the AI can draw flowcharts with connectors between objects."
-
-**Result:** 9 new TDD tests covering line creation (points, fromId/toId, arrowEnd, collision skip), then implementation: added 'line' to createObject tool enum, line-specific properties, system prompt flowchart guidance (8 new rules), and updated COMPLEX_PATTERNS regex to catch 'flowchart', 'connect', and 'arrow'. Verified locally with curl — AI created 6 colored boxes + 2 connecting arrows.
-
-### Prompt 8: Production debugging
-> (Investigating why AI-created objects didn't appear in real-time on production)
-
-**Result:** Claude Code added diagnostic logging to the WebSocket broadcast function, used Chrome MCP to test on production, identified that a Railway redeployment was needed. After push + redeploy, real-time AI sync confirmed working — objects appeared instantly on the live canvas.
-
-### Prompt 9: Rubber-band selection fix (4-iteration debugging)
-> "rubber band select for multiple objects does not work"
-
-**Result:** This required 4 iterations to solve, demonstrating deep Konva event system investigation:
-
-1. **Attempt 1 — `stopDrag()` in onDragStart:** Called `stage.stopDrag()` when rubber-band was active. Didn't work — Konva's drag system had already hijacked mouse events by the time `onDragStart` fires.
-
-2. **Attempt 2 — Imperative `stage.draggable(false)` in mouseDown:** Set `stage.draggable(false)` before Konva could start its drag. Still didn't work — Konva registers drag candidates internally during mousedown processing before custom handlers execute.
-
-3. **Attempt 3 — Remove Stage draggable entirely (nuclear approach):** Removed the `draggable` prop from the Stage completely. Replaced pan with scroll/trackpad (plain scroll = pan, Ctrl+scroll = zoom) and Space+drag for manual pan. This fixed the drag hijacking but revealed a new bug: Konva fires `onClick` after a mousedown→mousemove→mouseup sequence, causing `handleStageClick` to fire after the rubber-band and either clear the selection or create new objects.
-
-4. **Final fix — `didRubberBandRef`:** Added a ref that's set to `true` when rubber-band or pan completes in mouseUp. `handleStageClick` checks this ref and skips if true, preventing the spurious click from undoing the rubber-band selection.
-
-Wrote 11 new TDD tests covering the full lifecycle. Chrome MCP verified multi-select working on production — "2 selected" badge with selection handles on both objects. Board.tsx grew from ~666 to ~872 lines. This was the hardest Konva-specific bug in the project.
-
----
 
 ## 3. Code Analysis
 
@@ -102,15 +65,31 @@ Wrote 11 new TDD tests covering the full lifecycle. Chrome MCP verified multi-se
 
 | Category | Lines | AI-Generated | Hand-Written |
 |----------|-------|-------------|--------------|
-| Source code | ~7,100 | ~90% | ~10% |
-| Test code | ~6,800 | ~95% | ~5% |
-| Config files | ~300 | ~70% | ~30% |
-| **Total** | **~14,200** | **~91%** | **~9%** |
+| Source code | ~7,100 | 100% | 0% |
+| Test code | ~6,800 | 100% | 0% |
+| Config files | ~300 | ~85% | ~15% |
 
+---
+
+## 4. Development Timeline
+
+| Day | Commits | Key Milestones |
+|-----|---------|---------------|
+| Day 1 (Feb 16) | ~30 | Monorepo scaffold, Yjs sync, canvas with sticky notes + rectangles |
+| Day 2 (Feb 17) | ~35 | Multi-select, rotation, circles, text, frames, inline editing |
+| Day 3 (Feb 18) | ~35 | Supabase persistence, AI agent + local parser, security hardening |
+| Day 4 (Feb 19) | ~25 | Performance optimization, component extraction, code cleanup |
+| Day 5 (Feb 20) | ~18 | Multi-board auth, dashboard, Langfuse, model routing |
+| Day 6 (Feb 21) | ~15 | Frame grouping, guest sandbox, copy/paste, undo/redo, help panel |
+| Day 7 (Feb 22) | ~11 | AI line/arrow support, rubber-band selection fix, scroll/Space pan, production debugging, documentation |
+
+---
+
+## 5. Strengths and Limitations
 **What the AI generated well:**
 - WebSocket server with room isolation and binary protocol
 - Yjs integration hook with awareness, reconnection, cursor throttling, and undo/redo
-- All 415 TDD tests (including edge cases I wouldn't have written)
+- All TDD tests (including edge cases I wouldn't have written)
 - Security module with CORS, message size limits, room validation
 - Viewport culling with render budget and center-distance sorting
 - Component extraction with proper prop interfaces
@@ -133,52 +112,6 @@ Wrote 11 new TDD tests covering the full lifecycle. Chrome MCP verified multi-se
 - Production debugging strategy (where to add diagnostics)
 
 ---
-
-## 4. MCP Usage (Browser Automation)
-
-Chrome MCP was essential for tasks that require visual verification:
-
-### Performance Testing
-- Injected 500 objects by walking React's fiber tree to find the Y.Doc reference
-- Measured frame times using `performance.now()` in the browser console
-- Verified render budget worked: 150/552 objects rendered at zoom-out, 118/552 at 100% zoom
-
-### Production Verification
-- Navigated to `https://collabboard.raqdrobinson.com` after each deploy
-- Took screenshots to confirm the app loaded and WebSocket connected
-- Checked the health endpoint (`/health`) for server status
-- Tested AI commands on production via the chat panel — verified real-time sync
-
-### Real-Time AI Sync Testing
-- Typed AI commands on production board via ChatPanel
-- Verified objects appeared instantly on the canvas (not just after refresh)
-- Confirmed that previously persisted AI-created objects appeared after page reload
-- Diagnosed broadcast issues by checking WebSocket client counts in server logs
-
-### Visual Testing
-- Verified AI button didn't overlap zoom controls
-- Confirmed DM Sans font rendered correctly across all components
-- Checked focus-visible rings on interactive elements
-- Verified undo/redo buttons in toolbar
-- Confirmed HelpPanel overlay renders correctly
-
----
-
-## 5. Development Timeline
-
-| Day | Commits | Key Milestones |
-|-----|---------|---------------|
-| Day 1 (Feb 16) | ~30 | Monorepo scaffold, Yjs sync, canvas with sticky notes + rectangles |
-| Day 2 (Feb 17) | ~35 | Multi-select, rotation, circles, text, frames, inline editing |
-| Day 3 (Feb 18) | ~35 | Supabase persistence, AI agent + local parser, security hardening |
-| Day 4 (Feb 19) | ~25 | Performance optimization, component extraction, code cleanup |
-| Day 5 (Feb 20) | ~18 | Multi-board auth, dashboard, Langfuse, model routing |
-| Day 6 (Feb 21) | ~15 | Frame grouping, guest sandbox, copy/paste, undo/redo, help panel |
-| Day 7 (Feb 22) | ~11 | AI line/arrow support, rubber-band selection fix, scroll/Space pan, production debugging, documentation |
-
----
-
-## 6. Strengths & Limitations
 
 ### Strengths of AI-Assisted Development
 
@@ -210,7 +143,7 @@ Chrome MCP was essential for tasks that require visual verification:
 
 ---
 
-## 7. Key Learnings
+## 6. Key Learnings
 
 1. **TDD + AI = highest confidence shipping.** Every feature was green before merging. Zero production bugs from code changes (415 tests across the full stack).
 
