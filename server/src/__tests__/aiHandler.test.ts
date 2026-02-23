@@ -13,7 +13,7 @@
  *  - skipCollisionCheck: allows intentional placement without auto-nudging
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import * as Y from 'yjs'
 
 // ---------------------------------------------------------------------------
@@ -957,5 +957,158 @@ describe('executeGetBoardState', () => {
     expect(after).toContain('1 total')
     expect(after).toContain('New item')
     expect(after).not.toContain('empty')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Command Cache Integration tests
+// ---------------------------------------------------------------------------
+
+import { processAICommand, commandCache } from '../aiHandler.js'
+import type { ToolAction } from '../../../shared/types.js'
+
+describe('processAICommand — command cache integration', () => {
+  beforeEach(() => {
+    commandCache.clear()
+  })
+
+  it('exports a usable CommandCache singleton', () => {
+    expect(commandCache).toBeDefined()
+    expect(commandCache.size).toBe(0)
+    expect(typeof commandCache.learn).toBe('function')
+    expect(typeof commandCache.match).toBe('function')
+    expect(typeof commandCache.replay).toBe('function')
+  })
+
+  it('returns cached result for a matching command (skips API)', async () => {
+    const doc = new Y.Doc()
+
+    // Teach the cache a recipe by pre-populating it
+    const actions: ToolAction[] = [{
+      tool: 'createObject',
+      input: { type: 'sticky', x: 100, y: 100, fill: '#FFD700', text: 'Hello' },
+      result: '{"success":true,"id":"ai-123","type":"sticky","text":"Hello"}',
+    }]
+    commandCache.learn(
+      'Create a yellow sticky note that says Hello',
+      actions,
+      "Created a yellow sticky 'Hello'."
+    )
+
+    // Process a SIMILAR command — should hit the cache
+    const result = await processAICommand('Create a blue sticky note that says World', doc)
+
+    // Should have executed 1 action from the cached recipe
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0].tool).toBe('createObject')
+    // The cached recipe should substitute blue color and new text
+    expect(result.actions[0].input.fill).toBe('#87CEEB') // blue
+    expect(result.actions[0].input.text).toBe('World')
+    expect(result.actions[0].input.type).toBe('sticky')
+
+    // Verify object was actually created in the Y.Doc
+    const objectsMap = doc.getMap('objects')
+    expect(objectsMap.size).toBe(1)
+  })
+
+  it('returns cached result with correct response message', async () => {
+    const doc = new Y.Doc()
+
+    const actions: ToolAction[] = [{
+      tool: 'createObject',
+      input: { type: 'sticky', x: 100, y: 100, fill: '#FFD700', text: 'Hello' },
+      result: '{"success":true}',
+    }]
+    commandCache.learn(
+      'Create a yellow sticky that says Hello',
+      actions,
+      "Created a yellow sticky 'Hello'."
+    )
+
+    const result = await processAICommand('Create a green sticky that says Goodbye', doc)
+
+    // Response should reflect the new text
+    expect(result.message).toContain('Goodbye')
+  })
+
+  it('falls through to local parser on cache miss (no API key)', async () => {
+    const doc = new Y.Doc()
+
+    // Don't pre-populate cache — should miss and fall through
+    // The local parser handles "Create a yellow sticky note" commands
+    const result = await processAICommand('Create a yellow sticky note that says Test', doc)
+
+    // Should still work via local parser fallback
+    expect(result.actions.length).toBeGreaterThan(0)
+    expect(result.message).toBeDefined()
+    expect(result.message.length).toBeGreaterThan(0)
+  })
+
+  it('does not return cached result for generic/unrecognized intents', async () => {
+    const doc = new Y.Doc()
+
+    // Learn a recipe with a "generic" intent — should not be stored
+    commandCache.learn(
+      'Do something complex with the board',
+      [{ tool: 'createObject', input: { type: 'sticky', x: 100, y: 100 }, result: '{"success":true}' }],
+      'Did something.'
+    )
+
+    // Cache should be empty (generic intents are not cached)
+    expect(commandCache.size).toBe(0)
+
+    // Process a generic command — should fall through to local parser
+    const result = await processAICommand('Do something weird', doc)
+    expect(result).toBeDefined()
+  })
+
+  it('cache hit increments hitCount', async () => {
+    const doc = new Y.Doc()
+
+    const actions: ToolAction[] = [{
+      tool: 'createObject',
+      input: { type: 'sticky', x: 100, y: 100, fill: '#FFD700', text: 'Test' },
+      result: '{"success":true}',
+    }]
+    commandCache.learn('Create a yellow sticky that says Test', actions, 'Created.')
+
+    // Process two matching commands
+    await processAICommand('Create a blue sticky that says One', doc)
+    await processAICommand('Create a green sticky that says Two', doc)
+
+    // hitCount should be 2 (one for each cache match in processAICommand)
+    const recipes = commandCache.getRecipes()
+    expect(recipes[0].hitCount).toBe(2)
+  })
+
+  it('cache hit creates objects on the doc (replay is functional)', async () => {
+    const doc = new Y.Doc()
+    const objectsMap = doc.getMap('objects')
+
+    const actions: ToolAction[] = [{
+      tool: 'createObject',
+      input: { type: 'sticky', x: 100, y: 100, fill: '#FFD700', text: 'Hello' },
+      result: '{"success":true,"id":"ai-123","type":"sticky","text":"Hello"}',
+    }]
+    commandCache.learn('Create a yellow sticky that says Hello', actions, 'Created.')
+
+    // First command
+    await processAICommand('Create a blue sticky that says Alpha', doc)
+    expect(objectsMap.size).toBe(1)
+
+    // Second command — should also create an object
+    await processAICommand('Create a pink sticky that says Beta', doc)
+    expect(objectsMap.size).toBe(2)
+
+    // Verify the objects have the correct properties
+    const allObjects: any[] = []
+    objectsMap.forEach((obj) => allObjects.push(obj))
+
+    const alpha = allObjects.find((o) => o.text === 'Alpha')
+    const beta = allObjects.find((o) => o.text === 'Beta')
+    expect(alpha).toBeDefined()
+    expect(alpha.fill).toBe('#87CEEB') // blue
+    expect(beta).toBeDefined()
+    expect(beta.fill).toBe('#FFB6C1') // pink
   })
 })

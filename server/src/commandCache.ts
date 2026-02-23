@@ -19,7 +19,7 @@ import {
   executeCreateObject,
   executeUpdateObject,
   executeMoveObject,
-} from './aiHandler.js'
+} from './toolExecutors.js'
 import type { BoardObject, ToolAction } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
@@ -276,6 +276,13 @@ export class CommandCache {
 
   getRecipes(): LearnedRecipe[] {
     return [...this.recipes]
+  }
+
+  /**
+   * Clear all recipes. Used for testing.
+   */
+  clear(): void {
+    this.recipes = []
   }
 
   /**
