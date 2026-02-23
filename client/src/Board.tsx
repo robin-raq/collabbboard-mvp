@@ -55,6 +55,7 @@ import {
   SHAPE_DEFAULTS,
   LINE_COLOR,
   MAX_RENDERED_OBJECTS,
+  DEFAULT_BOARD_ID,
 } from './constants'
 
 const DEBUG = import.meta.env.DEV
@@ -68,7 +69,7 @@ export default function Board({ userName, boardId }: BoardProps) {
   const userColor = USER_COLORS[Math.abs(userName.charCodeAt(0)) % USER_COLORS.length]
 
   const { objects, remoteCursors, connected, createObject, updateObject, deleteObject, setCursor, undo, redo, canUndo, canRedo } =
-    useYjs(boardId || 'mvp-board-1', userName, userColor)
+    useYjs(boardId || DEFAULT_BOARD_ID, userName, userColor)
 
   const stageRef = useRef<Konva.Stage>(null)
   const [scale, setScale] = useState(1)
@@ -872,7 +873,7 @@ export default function Board({ userName, boardId }: BoardProps) {
       {/* AI Chat panel */}
       {showChat && (
         <ChatPanel
-          boardId={boardId || 'mvp-board-1'}
+          boardId={boardId || DEFAULT_BOARD_ID}
           onClose={() => setShowChat(false)}
           onPanTo={panTo}
         />

@@ -71,8 +71,7 @@ export const LINE_COLOR = '#374151'
 export const PRODUCTION_HOST = 'raqdrobinson.com'
 
 // ---------------------------------------------------------------------------
-// WebSocket Protocol
+// WebSocket Protocol (re-exported from shared)
 // ---------------------------------------------------------------------------
 
-export const MSG_YJS = 0
-export const MSG_AWARENESS = 1
+export { MSG_YJS, MSG_AWARENESS, DEFAULT_BOARD_ID } from '../../shared/constants'

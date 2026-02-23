@@ -38,6 +38,7 @@ import {
   handleRenameBoard,
   handleDeleteBoard,
 } from './routes/boards.js'
+import { MSG_YJS, DEFAULT_BOARD_ID } from '../../shared/constants.js'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -45,7 +46,6 @@ import {
 
 const PORT = parseInt(process.env.PORT ?? '1234', 10)
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS ?? ''
-const MSG_YJS = 0
 const SNAPSHOT_INTERVAL_MS = 30_000   // 30 seconds
 const ROOM_IDLE_TIMEOUT_MS = 3_600_000 // 1 hour — evict idle rooms to free memory
 const EVICTION_CHECK_MS = 300_000      // 5 minutes — how often to check for idle rooms
@@ -306,7 +306,7 @@ const server = http.createServer(async (req, res) => {
   // POST /api/clear — Clear all objects from a board (dev/testing only)
   if (req.method === 'POST' && req.url === '/api/clear') {
     try {
-      const room = 'mvp-board-1'
+      const room = DEFAULT_BOARD_ID
       const doc = await getOrCreateDoc(room)
       const objectsMap = doc.getMap('objects')
       const keys = Array.from(objectsMap.keys())
@@ -336,7 +336,7 @@ const server = http.createServer(async (req, res) => {
         return
       }
 
-      const roomId = boardId || 'mvp-board-1'
+      const roomId = boardId || DEFAULT_BOARD_ID
       const doc = await getOrCreateDoc(roomId)
 
       const objectsMap = doc.getMap('objects')
