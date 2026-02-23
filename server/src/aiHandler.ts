@@ -558,3 +558,215 @@ export async function processAICommand(
     return parseCommand(userMessage, doc)
   }
 }
+
+// ---------------------------------------------------------------------------
+// Streaming Entry Point (async generator)
+// ---------------------------------------------------------------------------
+
+import type { AIStreamEvent } from '../../shared/aiStreamTypes.js'
+
+/**
+ * Process an AI command and yield stream events incrementally.
+ *
+ * Yields AIStreamEvent objects as processing progresses:
+ *  - tool_result for each tool call executed
+ *  - done when complete (with cached flag for cache hits)
+ *  - error if aborted or failed
+ *
+ * For cache hits and local parser results, tool_results are yielded
+ * one at a time followed by done — giving the client incremental feedback.
+ *
+ * For Claude API calls (when API key is set), the same pattern applies
+ * but with additional status events.
+ */
+export async function* processAICommandStream(
+  userMessage: string,
+  doc: Y.Doc,
+  metadata?: AICommandMetadata,
+  signal?: AbortSignal
+): AsyncGenerator<AIStreamEvent> {
+  // Check for abort before starting
+  if (signal?.aborted) {
+    yield { type: 'error', error: 'Request aborted before processing started.' }
+    return
+  }
+
+  const objectsMap = doc.getMap('objects') as Y.Map<BoardObject>
+
+  // -----------------------------------------------------------------------
+  // Fast path: check command cache for a learned recipe
+  // -----------------------------------------------------------------------
+  const cachedRecipe = commandCache.match(userMessage)
+  if (cachedRecipe) {
+    console.log(`[AI][stream] Cache hit (intent: ${cachedRecipe.intentKey}) for: "${userMessage.slice(0, 60)}"`)
+
+    const result = commandCache.replay(cachedRecipe, userMessage, objectsMap)
+
+    // Yield each action incrementally
+    for (const action of result.actions) {
+      if (signal?.aborted) {
+        yield { type: 'error', error: 'Request aborted during cache replay.' }
+        return
+      }
+      yield { type: 'tool_result', action }
+    }
+
+    yield {
+      type: 'done',
+      message: result.message,
+      actions: result.actions,
+      cached: true,
+    }
+    return
+  }
+
+  // -----------------------------------------------------------------------
+  // Local parser fallback (no API key)
+  // -----------------------------------------------------------------------
+  if (!anthropic) {
+    console.log(`[AI][stream] Local parser for: "${userMessage.slice(0, 60)}"`)
+
+    const result = parseCommand(userMessage, doc)
+
+    // Yield each action incrementally
+    for (const action of result.actions) {
+      if (signal?.aborted) {
+        yield { type: 'error', error: 'Request aborted during local parsing.' }
+        return
+      }
+      yield { type: 'tool_result', action }
+    }
+
+    yield {
+      type: 'done',
+      message: result.message,
+      actions: result.actions,
+    }
+    return
+  }
+
+  // -----------------------------------------------------------------------
+  // Claude API path (streaming)
+  // -----------------------------------------------------------------------
+  try {
+    yield { type: 'status', status: 'thinking' }
+
+    const boardContext = buildBoardContext(objectsMap)
+    const actions: ToolAction[] = []
+
+    const modelName = selectModel(userMessage)
+    const complex = isComplexCommand(userMessage)
+    const maxTokens = complex ? 2048 : 512
+
+    const messages: Anthropic.MessageParam[] = [
+      { role: 'user', content: `${boardContext}\n\nUser command: ${userMessage}` },
+    ]
+
+    let maxTurns = complex ? 8 : 3
+    while (maxTurns-- > 0) {
+      if (signal?.aborted) {
+        yield { type: 'error', error: 'Request aborted during Claude API call.' }
+        return
+      }
+
+      const response = await anthropic.messages.create({
+        model: modelName,
+        max_tokens: maxTokens,
+        temperature: 0,
+        system: [{
+          type: 'text' as const,
+          text: SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' as const },
+        }],
+        tools,
+        messages,
+      })
+
+      let textResponse = ''
+      const toolResultBlocks: Array<{ type: 'tool_result'; tool_use_id: string; content: string }> = []
+
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          textResponse += block.text
+          if (block.text) {
+            yield { type: 'text_delta', content: block.text }
+          }
+        } else if (block.type === 'tool_use') {
+          yield { type: 'status', status: 'executing' }
+
+          const result = executeTool(
+            block.name,
+            block.input as Record<string, unknown>,
+            objectsMap
+          )
+
+          const action: ToolAction = {
+            tool: block.name,
+            input: block.input as Record<string, unknown>,
+            result,
+          }
+          actions.push(action)
+
+          yield { type: 'tool_result', action }
+
+          toolResultBlocks.push({
+            type: 'tool_result',
+            tool_use_id: block.id,
+            content: result,
+          })
+        }
+      }
+
+      if (response.stop_reason === 'end_turn' || toolResultBlocks.length === 0) {
+        const message = textResponse || 'Done! The board has been updated.'
+
+        // Learn for future cache hits
+        commandCache.learn(userMessage, actions, message)
+
+        yield {
+          type: 'done',
+          message,
+          actions,
+        }
+        return
+      }
+
+      // Continue multi-turn conversation
+      messages.push({ role: 'assistant', content: response.content })
+      messages.push({
+        role: 'user',
+        content: toolResultBlocks as unknown as Anthropic.MessageParam['content'],
+      })
+
+      yield { type: 'status', status: 'thinking' }
+    }
+
+    // Max turns reached
+    const message = 'Completed the requested changes.'
+    commandCache.learn(userMessage, actions, message)
+
+    yield {
+      type: 'done',
+      message,
+      actions,
+    }
+  } catch (err) {
+    if (signal?.aborted) {
+      yield { type: 'error', error: 'Request aborted.' }
+      return
+    }
+
+    console.log('[AI][stream] Claude API error, falling back to local parser:', String(err).slice(0, 120))
+
+    // Fallback to local parser
+    const result = parseCommand(userMessage, doc)
+    for (const action of result.actions) {
+      yield { type: 'tool_result', action }
+    }
+    yield {
+      type: 'done',
+      message: result.message,
+      actions: result.actions,
+    }
+  }
+}
