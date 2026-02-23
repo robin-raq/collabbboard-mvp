@@ -38,7 +38,8 @@ import {
   handleRenameBoard,
   handleDeleteBoard,
 } from './routes/boards.js'
-import { MSG_YJS, DEFAULT_BOARD_ID } from '../../shared/constants.js'
+// Value imports from shared/ use .ts (tsx can't resolve .js→.ts for non-type imports outside pkg)
+import { MSG_YJS, DEFAULT_BOARD_ID } from '../../shared/constants.ts'
 
 // ---------------------------------------------------------------------------
 // Config
