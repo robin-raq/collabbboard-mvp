@@ -33,6 +33,8 @@ import {
   executeUpdateObject,
   executeMoveObject,
 } from './aiHandler.js'
+import { extractParamsFromCommand } from './commandCache.js'
+import type { LearnedRecipe } from './commandCache.js'
 import type { ToolAction, BoardObject } from '../../shared/types.js'
 
 // ---------------------------------------------------------------------------
@@ -797,6 +799,112 @@ function handleCreateObject(
 }
 
 // ---------------------------------------------------------------------------
+// Dynamic Pattern Expansion (learned from command cache)
+// ---------------------------------------------------------------------------
+
+/**
+ * Dynamic patterns registered from the command cache's learned recipes.
+ * These handle simple single-tool commands that the built-in regexes miss
+ * (e.g., unusual phrasing: "slap a green note saying..." instead of
+ * "create a green sticky that says...").
+ *
+ * Only single-tool recipes are registered — multi-step commands are
+ * handled by the full CommandCache.replay() in aiHandler.ts.
+ */
+interface DynamicPattern {
+  recipe: LearnedRecipe
+}
+
+const dynamicPatterns: DynamicPattern[] = []
+
+/**
+ * Register a learned recipe as a dynamic local parser pattern.
+ * Only single-tool recipes are accepted (multi-tool = too complex for local).
+ */
+export function addDynamicPattern(recipe: LearnedRecipe): void {
+  // Only accept single-tool recipes for dynamic patterns
+  if (recipe.actionTemplates.length !== 1) return
+
+  // Avoid duplicates by intent key
+  const existing = dynamicPatterns.find((p) => p.recipe.intentKey === recipe.intentKey)
+  if (existing) return
+
+  dynamicPatterns.push({ recipe })
+}
+
+/**
+ * Clear all dynamic patterns. Used for testing.
+ */
+export function clearDynamicPatterns(): void {
+  dynamicPatterns.length = 0
+}
+
+/**
+ * Substitute template placeholders with extracted params.
+ */
+function substituteTemplate(
+  template: Record<string, unknown>,
+  params: Record<string, unknown>
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(template)) {
+    if (typeof value === 'string' && value.startsWith('${')) {
+      const paramName = value.slice(2, -1)
+      result[key] = params[paramName] ?? value
+    } else {
+      result[key] = value
+    }
+  }
+  return result
+}
+
+/**
+ * Try matching the command against dynamic patterns.
+ * Returns a ParsedCommand if a match is found, null otherwise.
+ */
+export function tryDynamicPatterns(
+  message: string,
+  objectsMap: Y.Map<BoardObject>
+): ParsedCommand | null {
+  for (const { recipe } of dynamicPatterns) {
+    if (!recipe.matchPattern.test(message)) continue
+
+    // Only single-tool patterns reach here
+    const template = recipe.actionTemplates[0]
+    const params = extractParamsFromCommand(message)
+
+    // Apply defaults
+    if (!params.colorHex) params.colorHex = '#FFD700'
+    if (params.x === undefined) params.x = 200
+    if (params.y === undefined) params.y = 200
+
+    const input = substituteTemplate(template.inputTemplate, params)
+
+    let result: string
+    switch (template.tool) {
+      case 'createObject':
+        result = executeCreateObject(input, objectsMap)
+        break
+      case 'updateObject':
+        result = executeUpdateObject(input, objectsMap)
+        break
+      case 'moveObject':
+        result = executeMoveObject(input, objectsMap)
+        break
+      default:
+        continue // skip unknown tools
+    }
+
+    return {
+      message: recipe.responseTemplate || 'Done!',
+      actions: [{ tool: template.tool, input, result }],
+    }
+  }
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // Main Parser
 // ---------------------------------------------------------------------------
 
@@ -859,6 +967,10 @@ export function parseCommand(message: string, doc: Y.Doc): ParsedCommand {
   if (isCreateCommand(message)) {
     return handleCreateObject(message, objectsMap)
   }
+
+  // Try dynamic learned patterns before giving up
+  const dynamicResult = tryDynamicPatterns(message, objectsMap)
+  if (dynamicResult) return dynamicResult
 
   // Unrecognized command
   return {

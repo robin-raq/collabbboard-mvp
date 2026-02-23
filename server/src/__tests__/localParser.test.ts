@@ -19,9 +19,9 @@
  * 12. "Build a user journey map with 5 stages"
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import * as Y from 'yjs'
-import { parseCommand, ParsedCommand } from '../localParser.js'
+import { parseCommand, ParsedCommand, addDynamicPattern, clearDynamicPatterns, tryDynamicPatterns } from '../localParser.js'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -633,5 +633,182 @@ describe('Edge cases', () => {
     // Position should have changed from 999,999
     expect(obj.x).not.toBe(999)
     expect(obj.y).not.toBe(999)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Dynamic Pattern Expansion tests
+// ---------------------------------------------------------------------------
+
+import type { LearnedRecipe } from '../commandCache.js'
+
+describe('Dynamic Pattern Expansion', () => {
+  beforeEach(() => {
+    clearDynamicPatterns()
+  })
+
+  it('tryDynamicPatterns returns null when no patterns registered', () => {
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    const result = tryDynamicPatterns('Put a note saying Hello', objectsMap)
+    expect(result).toBeNull()
+  })
+
+  it('addDynamicPattern registers a new pattern', () => {
+    const recipe: LearnedRecipe = {
+      id: 'recipe-1',
+      intentKey: 'create_sticky',
+      matchPattern: /\b(create|add|make|put|place)\b.*\b(stick(?:y|ies)|note)\b/i,
+      exampleCommand: 'Create a yellow sticky that says Hello',
+      actionTemplates: [{
+        tool: 'createObject',
+        inputTemplate: { type: 'sticky', x: 100, y: 100, fill: '${colorHex}', text: '${text}' },
+      }],
+      responseTemplate: "Created a sticky '${text}'.",
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(recipe)
+
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    const result = tryDynamicPatterns('Put a green note saying World', objectsMap)
+    expect(result).not.toBeNull()
+    expect(result!.actions).toHaveLength(1)
+    expect(result!.actions[0].tool).toBe('createObject')
+  })
+
+  it('parseCommand tries dynamic patterns for unrecognized commands', () => {
+    // Register a dynamic pattern that matches unusual phrasing
+    const recipe: LearnedRecipe = {
+      id: 'recipe-2',
+      intentKey: 'create_sticky',
+      matchPattern: /\b(create|add|make|put|place)\b.*\b(stick(?:y|ies)|note)\b/i,
+      exampleCommand: 'Create a sticky that says Hi',
+      actionTemplates: [{
+        tool: 'createObject',
+        inputTemplate: { type: 'sticky', x: 100, y: 100, fill: '${colorHex}', text: '${text}' },
+      }],
+      responseTemplate: "Created a sticky '${text}'.",
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(recipe)
+
+    const doc = createTestDoc()
+
+    // This phrasing "Slap a note" won't match built-in patterns
+    // but matches the dynamic pattern's regex (note keyword)
+    const result = parseCommand('Place a green note saying Testing dynamic', doc)
+
+    expect(result.actions).toHaveLength(1)
+    expect(result.actions[0].tool).toBe('createObject')
+    expect(result.actions[0].input.text).toBe('Testing dynamic')
+  })
+
+  it('dynamic pattern correctly substitutes color and text params', () => {
+    const recipe: LearnedRecipe = {
+      id: 'recipe-3',
+      intentKey: 'create_sticky',
+      matchPattern: /\b(create|add|make|put|place)\b.*\b(stick(?:y|ies)|note)\b/i,
+      exampleCommand: 'Create a sticky that says Hi',
+      actionTemplates: [{
+        tool: 'createObject',
+        inputTemplate: { type: 'sticky', x: 100, y: 100, fill: '${colorHex}', text: '${text}' },
+      }],
+      responseTemplate: "Created a sticky.",
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(recipe)
+
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    const result = tryDynamicPatterns('Put a blue note saying Ocean', objectsMap)
+
+    expect(result).not.toBeNull()
+    expect(result!.actions[0].input.fill).toBe('#87CEEB') // blue
+    expect(result!.actions[0].input.text).toBe('Ocean')
+  })
+
+  it('dynamic pattern creates actual objects on the Y.Map', () => {
+    const recipe: LearnedRecipe = {
+      id: 'recipe-4',
+      intentKey: 'create_sticky',
+      matchPattern: /\b(create|add|make|put|place)\b.*\b(stick(?:y|ies)|note)\b/i,
+      exampleCommand: 'Create a sticky that says Hi',
+      actionTemplates: [{
+        tool: 'createObject',
+        inputTemplate: { type: 'sticky', x: 100, y: 100, fill: '${colorHex}', text: '${text}' },
+      }],
+      responseTemplate: "Created a sticky.",
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(recipe)
+
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    tryDynamicPatterns('Put a pink note saying Test', objectsMap)
+
+    expect(objectsMap.size).toBe(1)
+  })
+
+  it('only accepts single-tool recipes for dynamic patterns', () => {
+    // Multi-action recipes should not be registered as dynamic patterns
+    const multiActionRecipe: LearnedRecipe = {
+      id: 'recipe-multi',
+      intentKey: 'create_grid_2x2',
+      matchPattern: /grid/i,
+      exampleCommand: 'Create a 2x2 grid',
+      actionTemplates: [
+        { tool: 'createObject', inputTemplate: { type: 'sticky', x: 100, y: 100 } },
+        { tool: 'createObject', inputTemplate: { type: 'sticky', x: 320, y: 100 } },
+      ],
+      responseTemplate: 'Created grid.',
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(multiActionRecipe)
+
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    const result = tryDynamicPatterns('Create a 2x2 grid', objectsMap)
+    expect(result).toBeNull() // multi-action not handled by dynamic patterns
+  })
+
+  it('clearDynamicPatterns removes all registered patterns', () => {
+    const recipe: LearnedRecipe = {
+      id: 'recipe-clear',
+      intentKey: 'create_sticky',
+      matchPattern: /note/i,
+      exampleCommand: 'Create a note',
+      actionTemplates: [{
+        tool: 'createObject',
+        inputTemplate: { type: 'sticky', x: 100, y: 100, fill: '${colorHex}', text: '${text}' },
+      }],
+      responseTemplate: "Created.",
+      hitCount: 0,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    }
+
+    addDynamicPattern(recipe)
+    clearDynamicPatterns()
+
+    const doc = createTestDoc()
+    const objectsMap = doc.getMap('objects') as Y.Map<any>
+    const result = tryDynamicPatterns('Put a note saying Hello', objectsMap)
+    expect(result).toBeNull()
   })
 })
